@@ -1,0 +1,2 @@
+# This directory stores payment proof uploads
+# Files are named: proof_{transactionId}_{timestamp}.{extension}

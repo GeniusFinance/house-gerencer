@@ -44,3 +44,7 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+# Uploads (keep directory structure but ignore uploaded files)
+public/uploads/proofs/*
+!public/uploads/proofs/.gitkeep
