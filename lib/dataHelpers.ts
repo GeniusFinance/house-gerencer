@@ -32,13 +32,14 @@ export function parseSheetData(rawData: any[]): SheetRow[] {
     status: row["Status"] || row.status || "",
     category: row["Category"] || row.category || "",
     subcategory: row["Subcategory"] || row.subcategory || "",
-    tags: row["Tags"] || row.tags || "",
+    tags: row["Recebi"] || row["Tags"] || row.tags || "", // Prioritize "Recebi" for credit sheet
     pessoas: row["Pessoas"] || row.pessoas || "",
     credit: row["Credit"] || row.credit || "",
     card: row["Card"] || row.card || "",
     observation: row["Observation"] || row.observation || "",
     month: row["Month"] || row.month || "",
     year: row["Year"] || row.year || "",
+    code: row["code"] || row.codigo || "",
   }));
 }
 

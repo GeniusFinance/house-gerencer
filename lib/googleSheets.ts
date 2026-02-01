@@ -81,6 +81,7 @@ export async function appendGoogleSheetsData(
       spreadsheetId,
       range,
       valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS", // Always insert a new row instead of overwriting
       requestBody: {
         values,
       },
@@ -90,3 +91,66 @@ export async function appendGoogleSheetsData(
     throw error;
   }
 }
+
+export async function updateGoogleSheetsCell(
+  spreadsheetId: string,
+  sheetName: string,
+  rowIndex: number,
+  columnIndex: number,
+  value: string
+) {
+  try {
+    const sheets = authenticateGoogleSheets();
+
+    // Convert column index to letter (0 -> A, 1 -> B, etc.)
+    const columnLetter = String.fromCharCode(65 + columnIndex);
+    const range = `${sheetName}!${columnLetter}${rowIndex}`;
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[value]],
+      },
+    });
+  } catch (error) {
+    console.error("Error updating Google Sheets cell:", error);
+    throw error;
+  }
+}
+
+export async function findRowByCode(
+  spreadsheetId: string,
+  range: string,
+  codigo: string
+): Promise<number | null> {
+  try {
+    const data = await getGoogleSheetsData(spreadsheetId, range);
+    
+    console.log("Looking for código:", codigo);
+    console.log("Available códigos:", data.map((row: any) => row["code"]));
+    
+    // Normalize for comparison (trim whitespace and compare case-insensitively)
+    const normalizedCodigo = codigo.trim().toLowerCase();
+    
+    // Find the row index (add 2 because: 1 for header row, 1 for 1-based indexing)
+    const rowIndex = data.findIndex((row: any) => {
+      const rowCodigo = (row["code"] || "").trim().toLowerCase();
+      return rowCodigo === normalizedCodigo;
+    });
+    
+    if (rowIndex === -1) {
+      console.log("Código not found in sheet");
+      return null;
+    }
+    
+    console.log("Found código at row index:", rowIndex + 2);
+    return rowIndex + 2; // +2 to account for header and 1-based indexing
+  } catch (error) {
+    console.error("Error finding row by code:", error);
+    throw error;
+  }
+}
+
+

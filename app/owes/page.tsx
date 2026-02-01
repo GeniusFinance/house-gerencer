@@ -8,7 +8,6 @@ import {
   calculateTotal,
   formatCurrency,
   parseSheetData,
-  sortData,
   SortOption,
 } from "@/lib/dataHelpers";
 
@@ -24,27 +23,28 @@ export default function OwesPage() {
   const [sortBy, setSortBy] = useState<SortOption>("date-desc");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [sortColumn, setSortColumn] = useState<string>("validateDate");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   
-  // Payment form state
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [paymentDescription, setPaymentDescription] = useState("");
+  const [selectedTransaction, setSelectedTransaction] = useState<SheetRow | null>(null);
 
   useEffect(() => {
     async function loadData() {
       try {
-        // Load credit data
         const response = await fetch("/api/sheet-data");
         if (!response.ok) {
           throw new Error("Failed to load data");
         }
         const rawData = await response.json();
+        console.log("Raw sheet data:", rawData);
         const parsedData = parseSheetData(rawData);
         setData(parsedData);
 
-        // Load income data for payment tracking
         try {
           const incomeResponse = await fetch("/api/income-data");
           if (incomeResponse.ok) {
@@ -53,7 +53,6 @@ export default function OwesPage() {
           }
         } catch (incomeErr) {
           console.error("Failed to load income data:", incomeErr);
-          // Continue without income data
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load data");
@@ -138,69 +137,127 @@ export default function OwesPage() {
   }
   const filteredData = filterByUser(data, userName);
   
-  // Helper function to parse dates in multiple formats
   const parseDate = (dateStr: string): Date | null => {
-    if (!dateStr) return null;
+    if (!dateStr || dateStr.trim() === '') return null;
     
-    // Try ISO format first (YYYY-MM-DD)
-    let date = new Date(dateStr);
-    if (!isNaN(date.getTime())) return date;
-    
-    // Try DD/MM/YYYY format (Brazilian)
-    const parts = dateStr.split('/');
+
+    const parts = dateStr.trim().split('/');
     if (parts.length === 3) {
-      const [day, month, year] = parts;
-      date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      if (!isNaN(date.getTime())) return date;
+      const day = Number.parseInt(parts[0], 10);
+      const month = Number.parseInt(parts[1], 10);
+      const year = Number.parseInt(parts[2], 10);
+      
+      if (!Number.isNaN(day) && !Number.isNaN(month) && !Number.isNaN(year)) {
+        const fullYear = year < 100 ? (year < 50 ? 2000 + year : 1900 + year) : year;
+        const date = new Date(fullYear, month - 1, day);
+        
+        if (date.getFullYear() === fullYear && 
+            date.getMonth() === month - 1 && 
+            date.getDate() === day) {
+          return date;
+        }
+      }
     }
     
-    // Try MM/DD/YYYY format (US)
-    const partsUS = dateStr.split('/');
-    if (partsUS.length === 3) {
-      const [month, day, year] = partsUS;
-      date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      if (!isNaN(date.getTime())) return date;
+    const isoDate = new Date(dateStr);
+    if (!Number.isNaN(isoDate.getTime())) {
+      return isoDate;
     }
     
     return null;
   };
   
-  // Apply date range filter
   const dateFilteredData = filteredData.filter((row) => {
     if (!startDate && !endDate) return true;
     
     const rowDate = parseDate(row.validateDate);
-    if (!rowDate) return true; // Include invalid dates
+    if (!rowDate) return true;
     
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999); // Include the entire end date
+      end.setHours(23, 59, 59, 999); 
       return rowDate >= start && rowDate <= end;
     } else if (startDate) {
       const start = new Date(startDate);
       return rowDate >= start;
     } else if (endDate) {
       const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999); // Include the entire end date
+      end.setHours(23, 59, 59, 999);
       return rowDate <= end;
     }
     
     return true;
   });
   
-  const sortedData = sortData(dateFilteredData, sortBy);
-  const totalOwed = calculateTotal(dateFilteredData);
+  const unpaidData = dateFilteredData.filter((row) => {
+    const recebiStatus = row.tags?.toLowerCase().trim() || '';
+    return recebiStatus !== 'recebi'
+  });
+  
+  const handleColumnSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortDirection("desc");
+    }
+  };
 
-  // Calculate total payments made by this user
+
+  const sortedData = [...unpaidData].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+
+    switch (sortColumn) {
+      case "purchaseDate":
+        aValue = parseDate(a.purchaseDate)?.getTime() || 0;
+        bValue = parseDate(b.purchaseDate)?.getTime() || 0;
+        break;
+      case "validateDate":
+        aValue = parseDate(a.validateDate)?.getTime() || 0;
+        bValue = parseDate(b.validateDate)?.getTime() || 0;
+        break;
+      case "description":
+        aValue = a.description.toLowerCase();
+        bValue = b.description.toLowerCase();
+        break;
+      case "value":
+        aValue = a.value;
+        bValue = b.value;
+        break;
+      case "category":
+        aValue = a.category.toLowerCase();
+        bValue = b.category.toLowerCase();
+        break;
+      case "status":
+        aValue = a.status.toLowerCase();
+        bValue = b.status.toLowerCase();
+        break;
+      case "account":
+        aValue = a.account.toLowerCase();
+        bValue = b.account.toLowerCase();
+        break;
+      default:
+        aValue = parseDate(a.validateDate)?.getTime() || 0;
+        bValue = parseDate(b.validateDate)?.getTime() || 0;
+    }
+
+    if (sortDirection === "asc") {
+      return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
+    } else {
+      return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
+    }
+  });
+  console.log("sortedData:", sortedData);
+  const totalOwed = calculateTotal(unpaidData);
+
   const userPayments = incomeData.filter((income) => {
-    // Match payments by payer name (stored in tags field)
     const payerName = income.tags?.toLowerCase() || '';
     const matchesPayer = payerName === userName.toLowerCase();
     
-    // Also match by description or linked credit ID
     const matchesDescription = income.description?.toLowerCase().includes(userName.toLowerCase()) ||
-                        dateFilteredData.some(row => 
+                        unpaidData.some(row => 
                           income.relatedCreditId === row.description ||
                           income.description?.toLowerCase().includes(row.description.toLowerCase())
                         );
@@ -213,10 +270,8 @@ export default function OwesPage() {
     return sum + (value || 0);
   }, 0);
 
-  // Net debt = Total Owed - Total Paid
   const netDebt = totalOwed - totalPaid;
 
-  // Helper function to check if a transaction has a linked payment
   const getLinkedPayment = (transactionDescription: string) => {
     return incomeData.find(
       (income) =>
@@ -225,22 +280,35 @@ export default function OwesPage() {
     );
   };
 
-  // Get unpaid/partially paid transactions sorted by date (oldest first)
   const getUnpaidTransactions = () => {
-    return dateFilteredData
+    return unpaidData
       .filter(row => {
         const linkedPayment = getLinkedPayment(row.description);
-        return !linkedPayment; // Not fully paid
+        return !linkedPayment; 
       })
       .sort((a, b) => {
         const dateA = parseDate(a.validateDate || a.purchaseDate);
         const dateB = parseDate(b.validateDate || b.purchaseDate);
         if (!dateA || !dateB) return 0;
-        return dateA.getTime() - dateB.getTime(); // Oldest first
+        return dateA.getTime() - dateB.getTime();
       });
   };
 
-  // Handle payment submission
+  const handlePayForTransaction = (transaction: SheetRow) => {
+    console.log ("Selected transaction for payment:", transaction);
+    setSelectedTransaction(transaction);
+    setPaymentAmount(transaction.value.toString());
+    setPaymentDescription(`Pagamento - ${transaction.description}`);
+    setShowPaymentForm(true);
+  };
+
+  const handleOpenGeneralPayment = () => {
+    setSelectedTransaction(null);
+    setPaymentAmount("");
+    setPaymentDescription("");
+    setShowPaymentForm(true);
+  };
+
   async function handlePaymentSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!userName) return;
@@ -250,7 +318,6 @@ export default function OwesPage() {
     try {
       let proofUrl = "";
 
-      // Upload proof file if selected
       if (selectedFile) {
         const fileFormData = new FormData();
         fileFormData.append("file", selectedFile);
@@ -270,39 +337,45 @@ export default function OwesPage() {
         proofUrl = uploadData.fileUrl;
       }
 
-      // Get unpaid transactions to link payment to
-      const unpaidTransactions = getUnpaidTransactions();
-      const transactionsToLink = unpaidTransactions.slice(0, 3).map(t => t.description).join(", ");
+      let incomePayload: any = {
+        value: paymentAmount,
+        account: "Nubank Pessoal",
+        category: "Incomes",
+        payer: userName.toLowerCase(),
+        proofUrl,
+        date: new Date().toLocaleDateString('pt-BR'),
+      };
+      if (selectedTransaction) {
+        incomePayload.description = paymentDescription || `Pagamento - ${selectedTransaction.description}`;
+        incomePayload.codigoRelacao = selectedTransaction.code 
+        incomePayload.type = "credit"; 
+        incomePayload.observation = `Pagamento específico para: ${selectedTransaction.description}`;
+      } else {
+        const unpaidTransactions = getUnpaidTransactions();
+        const transactionsToLink = unpaidTransactions.slice(0, 3).map(t => t.description).join(", ");
+        incomePayload.description = paymentDescription || `Pagamento de ${userName} - ${transactionsToLink}`;
+        incomePayload.observation = `Pagamento aplicado às dívidas mais antigas. Total: R$ ${paymentAmount}`;
+      }
+console.log("selectedTransaction:", selectedTransaction);
 
-      // Register income/payment
       const incomeResponse = await fetch("/api/income-data", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          description: paymentDescription || `Pagamento de ${userName} - ${transactionsToLink}`,
-          value: paymentAmount,
-          account: "Nubank Pessoal",
-          category: "Incomes",
-          payer: userName.toLowerCase(),
-          proofUrl,
-          observation: `Pagamento aplicado às dívidas mais antigas. Total: R$ ${paymentAmount}`,
-          date: new Date().toLocaleDateString('pt-BR'),
-        }),
+        body: JSON.stringify(incomePayload),
       });
 
       if (!incomeResponse.ok) {
         throw new Error("Failed to register payment");
       }
 
-      // Reset form and reload data
       setPaymentAmount("");
       setPaymentDescription("");
       setSelectedFile(null);
+      setSelectedTransaction(null);
       setShowPaymentForm(false);
       
-      // Reload data
       const response = await fetch("/api/sheet-data");
       if (response.ok) {
         const rawData = await response.json();
@@ -316,7 +389,10 @@ export default function OwesPage() {
         setIncomeData(incomes);
       }
 
-      alert("Pagamento registrado com sucesso! O valor será descontado das dívidas mais antigas.");
+      const successMessage = selectedTransaction 
+        ? `Pagamento registrado com sucesso para: ${selectedTransaction.description}!`
+        : "Pagamento registrado com sucesso! O valor será descontado das dívidas mais antigas.";
+      alert(successMessage);
     } catch (err) {
       console.error("Error submitting payment:", err);
       alert(err instanceof Error ? err.message : "Erro ao registrar pagamento");
@@ -385,28 +461,6 @@ export default function OwesPage() {
               </div>
             )}
 
-            {/* Sort Control */}
-            <div className="border-t border-gray-200 pt-4">
-              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                <div className="flex-1 w-full sm:w-auto">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                    Ordenar Por
-                  </label>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as SortOption)}
-                    className="w-full sm:w-64 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                  >
-                    <option value="date-desc">Data (Mais Recente)</option>
-                    <option value="date-asc">Data (Mais Antiga)</option>
-                    <option value="value-desc">Valor (Maior)</option>
-                    <option value="value-asc">Valor (Menor)</option>
-                    <option value="category">Categoria (A-Z)</option>
-                    <option value="status">Status</option>
-                  </select>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -429,19 +483,6 @@ export default function OwesPage() {
               </div>
             </div>
             
-            {/* Send Payment Button */}
-            {netDebt > 0 && (
-              <button
-                onClick={() => setShowPaymentForm(!showPaymentForm)}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-semibold transition-colors shadow-lg flex items-center gap-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                <span className="hidden sm:inline">Enviar Pagamento</span>
-                <span className="sm:hidden">Pagar</span>
-              </button>
-            )}
           </div>
 
           {/* Payment Form */}
@@ -451,8 +492,18 @@ export default function OwesPage() {
                 <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Registrar Pagamento
+                {selectedTransaction ? `Pagamento - ${selectedTransaction.description}` : "Registrar Pagamento"}
               </h3>
+              {selectedTransaction && (
+                <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800">
+                    <span className="font-medium">Valor original:</span> {formatCurrency(selectedTransaction.value)}
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Este pagamento será vinculado especificamente a esta dívida.
+                  </p>
+                </div>
+              )}
               <form onSubmit={handlePaymentSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -527,6 +578,7 @@ export default function OwesPage() {
                       setPaymentAmount("");
                       setPaymentDescription("");
                       setSelectedFile(null);
+                      setSelectedTransaction(null);
                     }}
                     className="px-6 py-2 rounded-xl border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
                   >
@@ -571,8 +623,8 @@ export default function OwesPage() {
               <div className="flex items-center space-x-2">
                 <div className="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
                   <span className="text-white text-sm font-semibold">
-                    {dateFilteredData.length}{" "}
-                    {dateFilteredData.length === 1 ? "item" : "items"}
+                    {unpaidData.length}{" "}
+                    {unpaidData.length === 1 ? "item" : "items"}
                   </span>
                 </div>
                 {(startDate || endDate) && (
@@ -620,7 +672,7 @@ export default function OwesPage() {
           </div>
         </div>
 
-        {dateFilteredData.length === 0 ? (
+        {unpaidData.length === 0 ? (
           <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-12 text-center">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg
@@ -658,9 +710,16 @@ export default function OwesPage() {
                         <h3 className="font-semibold text-gray-900 mb-1">
                           {row.description}
                         </h3>
-                        <p className="text-xs text-gray-500">
-                          {row.purchaseDate}
-                        </p>
+                        <div className="space-y-1">
+                          <p className="text-xs text-gray-500">
+                            <span className="font-medium">Compra:</span> {row.purchaseDate}
+                          </p>
+                          {row.validateDate && row.validateDate !== row.purchaseDate && (
+                            <p className="text-xs text-gray-500">
+                              <span className="font-medium">Vencimento:</span> {row.validateDate}
+                            </p>
+                          )}
+                        </div>
                         {linkedPayment && (
                           <div className="mt-2 flex items-center gap-1">
                             <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 font-medium">
@@ -701,6 +760,17 @@ export default function OwesPage() {
                           {row.status}
                         </span>
                       </div>
+                      {!linkedPayment && (
+                        <button
+                          onClick={() => handlePayForTransaction(row)}
+                          className="text-xs px-3 py-1 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors flex items-center gap-1"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          Pagar
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -712,26 +782,88 @@ export default function OwesPage() {
               <table className="min-w-full">
                 <thead>
                   <tr className="bg-gray-50/50">
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Data da compra
+                    <th 
+                      onClick={() => handleColumnSort("purchaseDate")}
+                      className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Data da Compra
+                        {sortColumn === "purchaseDate" && (
+                          <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                        )}
+                      </div>
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Descrição
+                    <th 
+                      onClick={() => handleColumnSort("validateDate")}
+                      className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Vencimento
+                        {sortColumn === "validateDate" && (
+                          <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                        )}
+                      </div>
                     </th>
-                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Valor
+                    <th 
+                      onClick={() => handleColumnSort("description")}
+                      className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Descrição
+                        {sortColumn === "description" && (
+                          <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                        )}
+                      </div>
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Categoria
+                    <th 
+                      onClick={() => handleColumnSort("value")}
+                      className="px-6 py-4 text-right text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Valor
+                        {sortColumn === "value" && (
+                          <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                        )}
+                      </div>
                     </th>
-                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Status
+                    <th 
+                      onClick={() => handleColumnSort("category")}
+                      className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Categoria
+                        {sortColumn === "category" && (
+                          <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                        )}
+                      </div>
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Conta
+                    <th 
+                      onClick={() => handleColumnSort("status")}
+                      className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center justify-center gap-1">
+                        Status
+                        {sortColumn === "status" && (
+                          <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleColumnSort("account")}
+                      className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Conta
+                        {sortColumn === "account" && (
+                          <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                        )}
+                      </div>
                     </th>
                     <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
                       Pagamento
+                    </th>
+                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
+                      Ações
                     </th>
                   </tr>
                 </thead>
@@ -746,6 +878,11 @@ export default function OwesPage() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">
                             {row.purchaseDate}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">
+                            {row.validateDate || "-"}
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -817,6 +954,21 @@ export default function OwesPage() {
                             </div>
                           ) : (
                             <span className="text-xs text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {!linkedPayment ? (
+                            <button
+                              onClick={() => handlePayForTransaction(row)}
+                              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors shadow-sm"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                              Pagar
+                            </button>
+                          ) : (
+                            <span className="text-xs text-green-600 font-medium">✓ Pago</span>
                           )}
                         </td>
                       </tr>

@@ -14,6 +14,7 @@ export interface SheetRow {
   observation: string;
   month: string;
   year: string;
+  code: string; 
   proofUrl?: string; 
   relatedCreditId?: string; 
 }
@@ -34,7 +35,7 @@ export interface IncomeRow {
   subcategory: string;
   tags: string;
   proofUrl?: string; 
-  relatedCreditId?: string;
+  codigoRelacao?: string; // Código Relacao - links to Credit or Expense
   observation: string;
   month: string;
   year: string;
