@@ -10,6 +10,7 @@ import {
   parseSheetData,
   SortOption,
 } from "@/lib/dataHelpers";
+import PaymentDrawer from "./PaymentDrawer";
 
 export default function OwesPage() {
   const searchParams = useSearchParams();
@@ -21,16 +22,25 @@ export default function OwesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>("date-desc");
-  const [startDate, setStartDate] = useState<string>("");
-  const [endDate, setEndDate] = useState<string>("");
+  
+  const getCurrentMonthDates = () => {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return {
+      start: firstDay.toISOString().split('T')[0],
+      end: lastDay.toISOString().split('T')[0]
+    };
+  };
+  
+  const currentMonth = getCurrentMonthDates();
+  const [startDate, setStartDate] = useState<string>(currentMonth.start);
+  const [endDate, setEndDate] = useState<string>(currentMonth.end);
+  const [tagFilter, setTagFilter] = useState<string>("not-recebi");
   const [sortColumn, setSortColumn] = useState<string>("validateDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   
   const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [paymentDescription, setPaymentDescription] = useState("");
   const [selectedTransaction, setSelectedTransaction] = useState<SheetRow | null>(null);
 
   useEffect(() => {
@@ -192,7 +202,17 @@ export default function OwesPage() {
   
   const unpaidData = dateFilteredData.filter((row) => {
     const recebiStatus = row.tags?.toLowerCase().trim() || '';
-    return recebiStatus !== 'recebi'
+    
+    switch (tagFilter) {
+      case "not-recebi":
+        return recebiStatus !== 'recebi';
+      case "recebi":
+        return recebiStatus === 'recebi';
+      case "all":
+        return true;
+      default:
+        return recebiStatus !== 'recebi';
+    }
   });
   
   const handleColumnSort = (column: string) => {
@@ -297,32 +317,29 @@ export default function OwesPage() {
   const handlePayForTransaction = (transaction: SheetRow) => {
     console.log ("Selected transaction for payment:", transaction);
     setSelectedTransaction(transaction);
-    setPaymentAmount(transaction.value.toString());
-    setPaymentDescription(`Pagamento - ${transaction.description}`);
     setShowPaymentForm(true);
   };
 
   const handleOpenGeneralPayment = () => {
     setSelectedTransaction(null);
-    setPaymentAmount("");
-    setPaymentDescription("");
     setShowPaymentForm(true);
   };
 
-  async function handlePaymentSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const handleDrawerSubmit = async (data: {
+    amount: string;
+    description: string;
+    file: File | null;
+  }) => {
     if (!userName) return;
-    
-    setUploading(true);
 
     try {
       let proofUrl = "";
 
-      if (selectedFile) {
+      if (data.file) {
         const fileFormData = new FormData();
-        fileFormData.append("file", selectedFile);
+        fileFormData.append("file", data.file);
         fileFormData.append("transactionId", Date.now().toString());
-        fileFormData.append("description", paymentDescription || `Pagamento - ${userName}`);
+        fileFormData.append("description", data.description || `Pagamento - ${userName}`);
 
         const uploadResponse = await fetch("/api/upload-proof", {
           method: "POST",
@@ -338,25 +355,27 @@ export default function OwesPage() {
       }
 
       let incomePayload: any = {
-        value: paymentAmount,
+        value: data.amount,
         account: "Nubank Pessoal",
         category: "Incomes",
         payer: userName.toLowerCase(),
         proofUrl,
         date: new Date().toLocaleDateString('pt-BR'),
       };
+      
       if (selectedTransaction) {
-        incomePayload.description = paymentDescription || `Pagamento - ${selectedTransaction.description}`;
-        incomePayload.codigoRelacao = selectedTransaction.code 
-        incomePayload.type = "credit"; 
+        incomePayload.description = data.description || `Pagamento - ${selectedTransaction.description}`;
+        incomePayload.codigoRelacao = selectedTransaction.code;
+        incomePayload.type = "credit";
         incomePayload.observation = `Pagamento específico para: ${selectedTransaction.description}`;
       } else {
         const unpaidTransactions = getUnpaidTransactions();
         const transactionsToLink = unpaidTransactions.slice(0, 3).map(t => t.description).join(", ");
-        incomePayload.description = paymentDescription || `Pagamento de ${userName} - ${transactionsToLink}`;
-        incomePayload.observation = `Pagamento aplicado às dívidas mais antigas. Total: R$ ${paymentAmount}`;
+        incomePayload.description = data.description || `Pagamento de ${userName} - ${transactionsToLink}`;
+        incomePayload.observation = `Pagamento aplicado às dívidas mais antigas. Total: R$ ${data.amount}`;
       }
-console.log("selectedTransaction:", selectedTransaction);
+      
+      console.log("selectedTransaction:", selectedTransaction);
 
       const incomeResponse = await fetch("/api/income-data", {
         method: "POST",
@@ -370,12 +389,9 @@ console.log("selectedTransaction:", selectedTransaction);
         throw new Error("Failed to register payment");
       }
 
-      setPaymentAmount("");
-      setPaymentDescription("");
-      setSelectedFile(null);
       setSelectedTransaction(null);
       setShowPaymentForm(false);
-      
+
       const response = await fetch("/api/sheet-data");
       if (response.ok) {
         const rawData = await response.json();
@@ -389,25 +405,37 @@ console.log("selectedTransaction:", selectedTransaction);
         setIncomeData(incomes);
       }
 
-      const successMessage = selectedTransaction 
+      const successMessage = selectedTransaction
         ? `Pagamento registrado com sucesso para: ${selectedTransaction.description}!`
         : "Pagamento registrado com sucesso! O valor será descontado das dívidas mais antigas.";
       alert(successMessage);
     } catch (err) {
       console.error("Error submitting payment:", err);
       alert(err instanceof Error ? err.message : "Erro ao registrar pagamento");
-    } finally {
-      setUploading(false);
+      throw err;
     }
-  }
+  };
 
   return (
     <div className="min-h-screen py-6 px-4 sm:py-12 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        {/* Filter and Sort Controls */}
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg p-4 mb-4">
           <div className="flex flex-col gap-4">
-            {/* Date Range Filter */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                Filtro de Status
+              </label>
+              <select
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+              >
+                <option value="not-recebi">Não Recebido</option>
+                <option value="recebi">Recebido</option>
+                <option value="all">Todos</option>
+              </select>
+            </div>
+            
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
@@ -433,7 +461,6 @@ console.log("selectedTransaction:", selectedTransaction);
               </div>
             </div>
 
-            {/* Clear Date Filter Button */}
             {(startDate || endDate) && (
               <div className="flex justify-end">
                 <button
@@ -464,7 +491,6 @@ console.log("selectedTransaction:", selectedTransaction);
           </div>
         </div>
 
-        {/* Header Card */}
         <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-6 sm:p-8 mb-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-4">
@@ -485,134 +511,9 @@ console.log("selectedTransaction:", selectedTransaction);
             
           </div>
 
-          {/* Payment Form */}
-          {showPaymentForm && (
-            <div className="mb-6 p-6 bg-green-50 rounded-2xl border-2 border-green-200">
-              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                {selectedTransaction ? `Pagamento - ${selectedTransaction.description}` : "Registrar Pagamento"}
-              </h3>
-              {selectedTransaction && (
-                <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-sm text-blue-800">
-                    <span className="font-medium">Valor original:</span> {formatCurrency(selectedTransaction.value)}
-                  </p>
-                  <p className="text-xs text-blue-600 mt-1">
-                    Este pagamento será vinculado especificamente a esta dívida.
-                  </p>
-                </div>
-              )}
-              <form onSubmit={handlePaymentSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Valor do Pagamento (R$) *
-                    </label>
-                    <input
-                      type="number"
-                      required
-                      step="0.01"
-                      min="0.01"
-                      max={netDebt}
-                      value={paymentAmount}
-                      onChange={(e) => setPaymentAmount(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      placeholder={`Máx: ${formatCurrency(netDebt)}`}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Este valor será aplicado às dívidas mais antigas primeiro
-                    </p>
-                  </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Descrição (opcional)
-                    </label>
-                    <input
-                      type="text"
-                      value={paymentDescription}
-                      onChange={(e) => setPaymentDescription(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      placeholder="Ex: Pagamento parcial do mês"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Comprovante de Pagamento *
-                    </label>
-                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-green-500 transition-colors">
-                      <input
-                        type="file"
-                        required
-                        accept="image/*,.pdf"
-                        onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                        className="hidden"
-                        id="payment-file-upload"
-                      />
-                      <label
-                        htmlFor="payment-file-upload"
-                        className="cursor-pointer inline-flex flex-col items-center"
-                      >
-                        <svg className="w-10 h-10 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                        <span className="text-sm text-gray-600">
-                          {selectedFile ? selectedFile.name : "Clique para enviar comprovante"}
-                        </span>
-                        <span className="text-xs text-gray-500 mt-1">
-                          PNG, JPG, WEBP ou PDF (máx. 5MB)
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowPaymentForm(false);
-                      setPaymentAmount("");
-                      setPaymentDescription("");
-                      setSelectedFile(null);
-                      setSelectedTransaction(null);
-                    }}
-                    className="px-6 py-2 rounded-xl border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={uploading}
-                    className="px-6 py-2 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {uploading ? (
-                      <>
-                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Enviando...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Confirmar Pagamento
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
 
           <div className="space-y-4">
-            {/* Total Owed Card */}
             <div className="bg-gradient-to-br from-red-500 to-pink-600 rounded-2xl p-6 sm:p-8 shadow-xl">
               <p className="text-red-100 text-sm font-medium mb-2 uppercase tracking-wide">
                 Total em Dívida
@@ -637,7 +538,6 @@ console.log("selectedTransaction:", selectedTransaction);
               </div>
             </div>
 
-            {/* Payments Summary - Only show if there are payments */}
             {totalPaid > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 shadow-xl">
@@ -696,7 +596,6 @@ console.log("selectedTransaction:", selectedTransaction);
           </div>
         ) : (
           <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl overflow-hidden">
-            {/* Mobile view - Cards */}
             <div className="sm:hidden divide-y divide-gray-100">
               {sortedData.map((row, index) => {
                 const linkedPayment = getLinkedPayment(row.description);
@@ -777,7 +676,6 @@ console.log("selectedTransaction:", selectedTransaction);
               })}
             </div>
 
-            {/* Desktop view - Table */}
             <div className="hidden sm:block overflow-x-auto">
               <table className="min-w-full">
                 <thead>
@@ -979,6 +877,18 @@ console.log("selectedTransaction:", selectedTransaction);
             </div>
           </div>
         )}
+
+                  <PaymentDrawer
+            isOpen={showPaymentForm}
+            onClose={() => {
+              setShowPaymentForm(false);
+              setSelectedTransaction(null);
+            }}
+            selectedTransaction={selectedTransaction}
+            userName={userName}
+            netDebt={netDebt}
+            onSubmit={handleDrawerSubmit}
+          />
       </div>
     </div>
   );
