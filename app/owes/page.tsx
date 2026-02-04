@@ -22,26 +22,28 @@ export default function OwesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>("date-desc");
-  
+
   const getCurrentMonthDates = () => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     return {
-      start: firstDay.toISOString().split('T')[0],
-      end: lastDay.toISOString().split('T')[0]
+      start: firstDay.toISOString().split("T")[0],
+      end: lastDay.toISOString().split("T")[0],
     };
   };
-  
+
   const currentMonth = getCurrentMonthDates();
   const [startDate, setStartDate] = useState<string>(currentMonth.start);
   const [endDate, setEndDate] = useState<string>(currentMonth.end);
   const [tagFilter, setTagFilter] = useState<string>("not-recebi");
   const [sortColumn, setSortColumn] = useState<string>("validateDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  
+
   const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] = useState<SheetRow | null>(null);
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<SheetRow | null>(null);
+  const [selectedOwes, setSelectedOwes] = useState<SheetRow[]>([]);
 
   useEffect(() => {
     async function loadData() {
@@ -51,7 +53,6 @@ export default function OwesPage() {
           throw new Error("Failed to load data");
         }
         const rawData = await response.json();
-        console.log("Raw sheet data:", rawData);
         const parsedData = parseSheetData(rawData);
         setData(parsedData);
 
@@ -146,47 +147,49 @@ export default function OwesPage() {
     );
   }
   const filteredData = filterByUser(data, userName);
-  
-  const parseDate = (dateStr: string): Date | null => {
-    if (!dateStr || dateStr.trim() === '') return null;
-    
 
-    const parts = dateStr.trim().split('/');
+  const parseDate = (dateStr: string): Date | null => {
+    if (!dateStr || dateStr.trim() === "") return null;
+
+    const parts = dateStr.trim().split("/");
     if (parts.length === 3) {
       const day = Number.parseInt(parts[0], 10);
       const month = Number.parseInt(parts[1], 10);
       const year = Number.parseInt(parts[2], 10);
-      
+
       if (!Number.isNaN(day) && !Number.isNaN(month) && !Number.isNaN(year)) {
-        const fullYear = year < 100 ? (year < 50 ? 2000 + year : 1900 + year) : year;
+        const fullYear =
+          year < 100 ? (year < 50 ? 2000 + year : 1900 + year) : year;
         const date = new Date(fullYear, month - 1, day);
-        
-        if (date.getFullYear() === fullYear && 
-            date.getMonth() === month - 1 && 
-            date.getDate() === day) {
+
+        if (
+          date.getFullYear() === fullYear &&
+          date.getMonth() === month - 1 &&
+          date.getDate() === day
+        ) {
           return date;
         }
       }
     }
-    
+
     const isoDate = new Date(dateStr);
     if (!Number.isNaN(isoDate.getTime())) {
       return isoDate;
     }
-    
+
     return null;
   };
-  
+
   const dateFilteredData = filteredData.filter((row) => {
     if (!startDate && !endDate) return true;
-    
+
     const rowDate = parseDate(row.validateDate);
     if (!rowDate) return true;
-    
+
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999); 
+      end.setHours(23, 59, 59, 999);
       return rowDate >= start && rowDate <= end;
     } else if (startDate) {
       const start = new Date(startDate);
@@ -196,25 +199,25 @@ export default function OwesPage() {
       end.setHours(23, 59, 59, 999);
       return rowDate <= end;
     }
-    
+
     return true;
   });
-  
+
   const unpaidData = dateFilteredData.filter((row) => {
-    const recebiStatus = row.tags?.toLowerCase().trim() || '';
-    
+    const recebiStatus = row.tags?.toLowerCase().trim() || "";
+
     switch (tagFilter) {
       case "not-recebi":
-        return recebiStatus !== 'recebi';
+        return recebiStatus !== "recebi";
       case "recebi":
-        return recebiStatus === 'recebi';
+        return recebiStatus === "recebi";
       case "all":
         return true;
       default:
-        return recebiStatus !== 'recebi';
+        return recebiStatus !== "recebi";
     }
   });
-  
+
   const handleColumnSort = (column: string) => {
     if (sortColumn === column) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -223,7 +226,6 @@ export default function OwesPage() {
       setSortDirection("desc");
     }
   };
-
 
   const sortedData = [...unpaidData].sort((a, b) => {
     let aValue: any;
@@ -269,24 +271,30 @@ export default function OwesPage() {
       return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
     }
   });
-  console.log("sortedData:", sortedData);
   const totalOwed = calculateTotal(unpaidData);
 
   const userPayments = incomeData.filter((income) => {
-    const payerName = income.tags?.toLowerCase() || '';
+    const payerName = income.tags?.toLowerCase() || "";
     const matchesPayer = payerName === userName.toLowerCase();
-    
-    const matchesDescription = income.description?.toLowerCase().includes(userName.toLowerCase()) ||
-                        unpaidData.some(row => 
-                          income.relatedCreditId === row.description ||
-                          income.description?.toLowerCase().includes(row.description.toLowerCase())
-                        );
-    
+
+    const matchesDescription =
+      income.description?.toLowerCase().includes(userName.toLowerCase()) ||
+      unpaidData.some(
+        (row) =>
+          income.relatedCreditId === row.description ||
+          income.description
+            ?.toLowerCase()
+            .includes(row.description.toLowerCase())
+      );
+
     return matchesPayer || matchesDescription;
   });
 
   const totalPaid = userPayments.reduce((sum, payment) => {
-    const value = typeof payment.value === 'string' ? Number.parseFloat(payment.value) : payment.value;
+    const value =
+      typeof payment.value === "string"
+        ? Number.parseFloat(payment.value)
+        : payment.value;
     return sum + (value || 0);
   }, 0);
 
@@ -296,15 +304,17 @@ export default function OwesPage() {
     return incomeData.find(
       (income) =>
         income.relatedCreditId === transactionDescription ||
-        income.description?.toLowerCase().includes(transactionDescription.toLowerCase())
+        income.description
+          ?.toLowerCase()
+          .includes(transactionDescription.toLowerCase())
     );
   };
 
   const getUnpaidTransactions = () => {
     return unpaidData
-      .filter(row => {
+      .filter((row) => {
         const linkedPayment = getLinkedPayment(row.description);
-        return !linkedPayment; 
+        return !linkedPayment;
       })
       .sort((a, b) => {
         const dateA = parseDate(a.validateDate || a.purchaseDate);
@@ -315,14 +325,36 @@ export default function OwesPage() {
   };
 
   const handlePayForTransaction = (transaction: SheetRow) => {
-    console.log ("Selected transaction for payment:", transaction);
+
     setSelectedTransaction(transaction);
     setShowPaymentForm(true);
   };
 
   const handleOpenGeneralPayment = () => {
+    if (selectedOwes.length === 0) {
+      alert("Por favor, selecione pelo menos uma dívida para pagar.");
+      return;
+    }
     setSelectedTransaction(null);
     setShowPaymentForm(true);
+  };
+
+  const handleToggleOwe = (row: SheetRow) => {
+    const isSelected = selectedOwes.some((owe) => owe.code === row.code);
+    if (isSelected) {
+      setSelectedOwes(selectedOwes.filter((owe) => owe.code !== row.code));
+    } else {
+      setSelectedOwes([...selectedOwes, row]);
+    }
+  };
+
+  const handleSelectAllOwes = () => {
+    const unpaidTransactions = getUnpaidTransactions();
+    if (selectedOwes.length === unpaidTransactions.length) {
+      setSelectedOwes([]);
+    } else {
+      setSelectedOwes(unpaidTransactions);
+    }
   };
 
   const handleDrawerSubmit = async (data: {
@@ -339,7 +371,10 @@ export default function OwesPage() {
         const fileFormData = new FormData();
         fileFormData.append("file", data.file);
         fileFormData.append("transactionId", Date.now().toString());
-        fileFormData.append("description", data.description || `Pagamento - ${userName}`);
+        fileFormData.append(
+          "description",
+          data.description || `Pagamento - ${userName}`
+        );
 
         const uploadResponse = await fetch("/api/upload-proof", {
           method: "POST",
@@ -360,22 +395,38 @@ export default function OwesPage() {
         category: "Incomes",
         payer: userName.toLowerCase(),
         proofUrl,
-        date: new Date().toLocaleDateString('pt-BR'),
+        date: new Date().toLocaleDateString("pt-BR"),
       };
-      
+
       if (selectedTransaction) {
-        incomePayload.description = data.description || `Pagamento - ${selectedTransaction.description}`;
+        incomePayload.description =
+          data.description || `Pagamento - ${selectedTransaction.description}`;
         incomePayload.codigoRelacao = selectedTransaction.code;
         incomePayload.type = "credit";
         incomePayload.observation = `Pagamento específico para: ${selectedTransaction.description}`;
+      } else if (selectedOwes.length > 0) {
+        const owesCodes = selectedOwes.map((owe) => owe.code).join(", ");
+        const owesDescriptions = selectedOwes
+          .map((owe) => owe.description)
+          .join(", ");
+        incomePayload.description =
+          data.description ||
+          `Pagamento geral - ${selectedOwes.length} dívidas`;
+        incomePayload.codigoRelacao = owesCodes;
+        incomePayload.type = "credit";
+        incomePayload.observation = `Pagamento geral para ${selectedOwes.length} dívidas: ${owesDescriptions}. Total: R$ ${data.amount}`;
       } else {
         const unpaidTransactions = getUnpaidTransactions();
-        const transactionsToLink = unpaidTransactions.slice(0, 3).map(t => t.description).join(", ");
-        incomePayload.description = data.description || `Pagamento de ${userName} - ${transactionsToLink}`;
+        const transactionsToLink = unpaidTransactions
+          .slice(0, 3)
+          .map((t) => t.description)
+          .join(", ");
+        incomePayload.description =
+          data.description ||
+          `Pagamento de ${userName} - ${transactionsToLink}`;
         incomePayload.observation = `Pagamento aplicado às dívidas mais antigas. Total: R$ ${data.amount}`;
       }
-      
-      console.log("selectedTransaction:", selectedTransaction);
+
 
       const incomeResponse = await fetch("/api/income-data", {
         method: "POST",
@@ -390,6 +441,7 @@ export default function OwesPage() {
       }
 
       setSelectedTransaction(null);
+      setSelectedOwes([]);
       setShowPaymentForm(false);
 
       const response = await fetch("/api/sheet-data");
@@ -407,6 +459,8 @@ export default function OwesPage() {
 
       const successMessage = selectedTransaction
         ? `Pagamento registrado com sucesso para: ${selectedTransaction.description}!`
+        : selectedOwes.length > 0
+        ? `Pagamento registrado com sucesso para ${selectedOwes.length} dívidas selecionadas!`
         : "Pagamento registrado com sucesso! O valor será descontado das dívidas mais antigas.";
       alert(successMessage);
     } catch (err) {
@@ -435,7 +489,7 @@ export default function OwesPage() {
                 <option value="all">Todos</option>
               </select>
             </div>
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
@@ -487,7 +541,6 @@ export default function OwesPage() {
                 </button>
               </div>
             )}
-
           </div>
         </div>
 
@@ -508,12 +561,50 @@ export default function OwesPage() {
                 </h1>
               </div>
             </div>
-            
           </div>
 
-
-
           <div className="space-y-4">
+            {selectedOwes.length > 0 && (
+              <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-4 sm:p-6 shadow-xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="text-blue-100 text-sm font-medium mb-1 uppercase tracking-wide">
+                      Selecionado para Pagamento
+                    </p>
+                    <div className="text-3xl sm:text-4xl font-bold text-white">
+                      {formatCurrency(
+                        selectedOwes.reduce((sum, owe) => sum + owe.value, 0)
+                      )}
+                    </div>
+                    <p className="text-blue-100 text-xs mt-1">
+                      {selectedOwes.length}{" "}
+                      {selectedOwes.length === 1
+                        ? "dívida selecionada"
+                        : "dívidas selecionadas"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleOpenGeneralPayment}
+                    className="px-4 py-3 rounded-xl bg-white text-blue-600 font-bold hover:bg-blue-50 transition-colors shadow-lg flex items-center gap-2"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    Pagar Selecionados
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="bg-gradient-to-br from-red-500 to-pink-600 rounded-2xl p-6 sm:p-8 shadow-xl">
               <p className="text-red-100 text-sm font-medium mb-2 uppercase tracking-wide">
                 Total em Dívida
@@ -558,12 +649,24 @@ export default function OwesPage() {
                   <p className="text-indigo-100 text-sm font-medium mb-2 uppercase tracking-wide">
                     Saldo Devedor
                   </p>
-                  <div className={`text-3xl sm:text-4xl font-bold text-white mb-2 ${netDebt <= 0 ? 'line-through' : ''}`}>
+                  <div
+                    className={`text-3xl sm:text-4xl font-bold text-white mb-2 ${
+                      netDebt <= 0 ? "line-through" : ""
+                    }`}
+                  >
                     {formatCurrency(netDebt)}
                   </div>
-                  <div className={`px-3 py-1 rounded-full inline-block ${netDebt <= 0 ? 'bg-green-500/30' : 'bg-white/20 backdrop-blur-sm'}`}>
+                  <div
+                    className={`px-3 py-1 rounded-full inline-block ${
+                      netDebt <= 0
+                        ? "bg-green-500/30"
+                        : "bg-white/20 backdrop-blur-sm"
+                    }`}
+                  >
                     <span className="text-white text-xs font-semibold">
-                      {netDebt <= 0 ? '✓ Quitado!' : `Desconto: ${formatCurrency(totalPaid)}`}
+                      {netDebt <= 0
+                        ? "✓ Quitado!"
+                        : `Desconto: ${formatCurrency(totalPaid)}`}
                     </span>
                   </div>
                 </div>
@@ -599,10 +702,15 @@ export default function OwesPage() {
             <div className="sm:hidden divide-y divide-gray-100">
               {sortedData.map((row, index) => {
                 const linkedPayment = getLinkedPayment(row.description);
+                const isSelected = selectedOwes.some(
+                  (owe) => owe.code === row.code
+                );
                 return (
                   <div
                     key={index}
-                    className="p-4 hover:bg-gray-50 transition-colors"
+                    className={`p-4 hover:bg-gray-50 transition-colors ${
+                      isSelected ? "bg-blue-50 border-l-4 border-blue-500" : ""
+                    }`}
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1">
@@ -611,13 +719,16 @@ export default function OwesPage() {
                         </h3>
                         <div className="space-y-1">
                           <p className="text-xs text-gray-500">
-                            <span className="font-medium">Compra:</span> {row.purchaseDate}
+                            <span className="font-medium">Compra:</span>{" "}
+                            {row.purchaseDate}
                           </p>
-                          {row.validateDate && row.validateDate !== row.purchaseDate && (
-                            <p className="text-xs text-gray-500">
-                              <span className="font-medium">Vencimento:</span> {row.validateDate}
-                            </p>
-                          )}
+                          {row.validateDate &&
+                            row.validateDate !== row.purchaseDate && (
+                              <p className="text-xs text-gray-500">
+                                <span className="font-medium">Vencimento:</span>{" "}
+                                {row.validateDate}
+                              </p>
+                            )}
                         </div>
                         {linkedPayment && (
                           <div className="mt-2 flex items-center gap-1">
@@ -645,6 +756,14 @@ export default function OwesPage() {
                     </div>
                     <div className="flex items-center justify-between mt-3">
                       <div className="flex items-center space-x-2">
+                        {!linkedPayment && (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleOwe(row)}
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                          />
+                        )}
                         <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
                           {row.category}
                         </span>
@@ -664,8 +783,18 @@ export default function OwesPage() {
                           onClick={() => handlePayForTransaction(row)}
                           className="text-xs px-3 py-1 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors flex items-center gap-1"
                         >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          <svg
+                            className="w-3 h-3"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 4v16m8-8H4"
+                            />
                           </svg>
                           Pagar
                         </button>
@@ -680,7 +809,20 @@ export default function OwesPage() {
               <table className="min-w-full">
                 <thead>
                   <tr className="bg-gray-50/50">
-                    <th 
+                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
+                      <input
+                        type="checkbox"
+                        checked={
+                          selectedOwes.length ===
+                            getUnpaidTransactions().length &&
+                          getUnpaidTransactions().length > 0
+                        }
+                        onChange={handleSelectAllOwes}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                        title="Selecionar todos"
+                      />
+                    </th>
+                    <th
                       onClick={() => handleColumnSort("purchaseDate")}
                       className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
@@ -691,7 +833,7 @@ export default function OwesPage() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleColumnSort("validateDate")}
                       className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
@@ -702,7 +844,7 @@ export default function OwesPage() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleColumnSort("description")}
                       className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
@@ -713,7 +855,7 @@ export default function OwesPage() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleColumnSort("value")}
                       className="px-6 py-4 text-right text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
@@ -724,7 +866,7 @@ export default function OwesPage() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleColumnSort("category")}
                       className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
@@ -735,7 +877,7 @@ export default function OwesPage() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleColumnSort("status")}
                       className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
@@ -746,7 +888,7 @@ export default function OwesPage() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleColumnSort("account")}
                       className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
@@ -768,11 +910,28 @@ export default function OwesPage() {
                 <tbody className="divide-y divide-gray-100">
                   {sortedData.map((row, index) => {
                     const linkedPayment = getLinkedPayment(row.description);
+                    const isSelected = selectedOwes.some(
+                      (owe) => owe.code === row.code
+                    );
                     return (
                       <tr
                         key={index}
-                        className="hover:bg-gray-50 transition-colors"
+                        className={`hover:bg-gray-50 transition-colors ${
+                          isSelected ? "bg-blue-50" : ""
+                        }`}
                       >
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {!linkedPayment ? (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleOwe(row)}
+                              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                          ) : (
+                            <span className="text-gray-300">-</span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">
                             {row.purchaseDate}
@@ -845,10 +1004,20 @@ export default function OwesPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           {linkedPayment ? (
                             <div className="flex flex-col items-center gap-1">
-                              <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              <svg
+                                className="w-5 h-5 text-green-600"
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                  clipRule="evenodd"
+                                />
                               </svg>
-                              <span className="text-xs text-gray-500">Registrado</span>
+                              <span className="text-xs text-gray-500">
+                                Registrado
+                              </span>
                             </div>
                           ) : (
                             <span className="text-xs text-gray-400">-</span>
@@ -860,13 +1029,25 @@ export default function OwesPage() {
                               onClick={() => handlePayForTransaction(row)}
                               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors shadow-sm"
                             >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 4v16m8-8H4"
+                                />
                               </svg>
                               Pagar
                             </button>
                           ) : (
-                            <span className="text-xs text-green-600 font-medium">✓ Pago</span>
+                            <span className="text-xs text-green-600 font-medium">
+                              ✓ Pago
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -878,17 +1059,19 @@ export default function OwesPage() {
           </div>
         )}
 
-                  <PaymentDrawer
-            isOpen={showPaymentForm}
-            onClose={() => {
-              setShowPaymentForm(false);
-              setSelectedTransaction(null);
-            }}
-            selectedTransaction={selectedTransaction}
-            userName={userName}
-            netDebt={netDebt}
-            onSubmit={handleDrawerSubmit}
-          />
+        <PaymentDrawer
+          isOpen={showPaymentForm}
+          onClose={() => {
+            setShowPaymentForm(false);
+            setSelectedTransaction(null);
+            setSelectedOwes([]);
+          }}
+          selectedTransaction={selectedTransaction}
+          selectedOwes={selectedOwes}
+          userName={userName}
+          netDebt={netDebt}
+          onSubmit={handleDrawerSubmit}
+        />
       </div>
     </div>
   );

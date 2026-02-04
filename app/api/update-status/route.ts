@@ -1,7 +1,4 @@
-import {
-  findRowByCode,
-  updateGoogleSheetsCell,
-} from "@/lib/googleSheets";
+import { findRowByCode, updateGoogleSheetsCell } from "@/lib/googleSheets";
 import { NextRequest, NextResponse } from "next/server";
 
 const creditSpreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_CREDIT_ID;
@@ -13,11 +10,14 @@ const EXPENSE_TAGS_COLUMN = 7;
 
 export async function POST(request: NextRequest) {
   try {
-    const { codigo, type } = await request.json();
-    
-    console.log("Update status request:", { codigo, type });
+    const { codigo, type } = (await request.json()) as {
+      codigo: string;
+      type: "credit" | "expense";
+    };
 
-    if (!codigo) {
+    const codigoArray = codigo.split(", ").filter((c) => c.trim());
+
+    if (!codigoArray || codigoArray.length === 0) {
       return NextResponse.json(
         { error: "Código is required" },
         { status: 400 }
@@ -42,13 +42,12 @@ export async function POST(request: NextRequest) {
       columnIndex = CREDIT_RECEBI_COLUMN;
       sheetName = "credit";
     } else {
-      spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_EXPENSE_ID || creditSpreadsheetId;
+      spreadsheetId =
+        process.env.GOOGLE_SHEETS_SPREADSHEET_EXPENSE_ID || creditSpreadsheetId;
       range = process.env.GOOGLE_SHEETS_EXPENSE_RANGE || "Expense!A:I";
       columnIndex = EXPENSE_TAGS_COLUMN;
       sheetName = "Expense";
     }
-    
-    console.log("Using spreadsheet config:", { spreadsheetId, range, columnIndex, sheetName });
 
     if (!spreadsheetId || !range) {
       return NextResponse.json(
@@ -57,33 +56,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("Finding row by codigo:", codigo);
-    const rowIndex = await findRowByCode(spreadsheetId, range, codigo);
-    
-    console.log("Found row index:", rowIndex);
+    const updatePromises = codigoArray.map(async (code) => {
+      const rowIndex = await findRowByCode(spreadsheetId!, range!, code);
 
-    if (!rowIndex) {
+      if (!rowIndex) {
+        console.warn(`No ${type} found with código: ${code}`);
+        return null;
+      }
+
+      await updateGoogleSheetsCell(
+        spreadsheetId!,
+        sheetName,
+        rowIndex,
+        columnIndex,
+        "Recebi"
+      );
+
+      return { code, rowIndex };
+    });
+
+    const results = await Promise.all(updatePromises);
+    const successfulUpdates = results.filter((r) => r !== null);
+
+    if (successfulUpdates.length === 0) {
       return NextResponse.json(
-        { error: `No ${type} found with código: ${codigo}` },
+        { error: `No ${type} found with códigos: ${codigoArray.join(", ")}` },
         { status: 404 }
       );
     }
 
-    console.log("Updating cell:", { sheetName, rowIndex, columnIndex });
-    await updateGoogleSheetsCell(
-      spreadsheetId,
-      sheetName,
-      rowIndex,
-      columnIndex,
-      "Recebi"
-    );
-    
-    console.log("Successfully updated cell to 'recebido'");
-
     return NextResponse.json({
       success: true,
-      message: `${type} marked as recebi`,
-      rowIndex,
+      message: `${successfulUpdates.length} ${type}(s) marked as recebi`,
+      updates: successfulUpdates,
     });
   } catch (error) {
     console.error("Error updating status:", error);

@@ -2,12 +2,13 @@
 
 import { SheetRow } from "@/types/sheet";
 import { formatCurrency } from "@/lib/dataHelpers";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface PaymentDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   selectedTransaction: SheetRow | null;
+  selectedOwes: SheetRow[];
   userName: string;
   netDebt: number;
   onSubmit: (data: {
@@ -21,20 +22,32 @@ export default function PaymentDrawer({
   isOpen,
   onClose,
   selectedTransaction,
+  selectedOwes,
   userName,
   netDebt,
   onSubmit,
 }: PaymentDrawerProps) {
   const [uploading, setUploading] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState(
-    selectedTransaction?.value.toString() || ""
-  );
+  
+  const totalSelectedAmount = selectedOwes.reduce((sum, owe) => sum + owe.value, 0);
+  
+  const [paymentAmount, setPaymentAmount] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [paymentDescription, setPaymentDescription] = useState(
-    selectedTransaction
-      ? `Pagamento - ${selectedTransaction.description}`
-      : ""
-  );
+  const [paymentDescription, setPaymentDescription] = useState("");
+
+  useEffect(() => {
+    if (selectedTransaction) {
+      setPaymentAmount(selectedTransaction.value.toString());
+      setPaymentDescription(`Pagamento - ${selectedTransaction.description}`);
+    } else if (selectedOwes.length > 0) {
+      setPaymentAmount(totalSelectedAmount.toString());
+      const descriptions = selectedOwes.map(owe => owe.description).join(", ");
+      setPaymentDescription(`Pagamento geral - ${selectedOwes.length} dívida(s): ${descriptions}`);
+    } else {
+      setPaymentAmount("");
+      setPaymentDescription("");
+    }
+  }, [selectedTransaction, selectedOwes, totalSelectedAmount]);
 
   if (!isOpen) return null;
 
@@ -93,10 +106,12 @@ export default function PaymentDrawer({
             </svg>
             {selectedTransaction
               ? `Pagamento - ${selectedTransaction.description}`
+              : selectedOwes.length > 0
+              ? `Pagamento Geral (${selectedOwes.length} dívidas)`
               : "Registrar Pagamento"}
           </h3>
 
-          {selectedTransaction && (
+          {selectedTransaction ? (
             <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
               <p className="text-sm text-blue-800">
                 <span className="font-medium">Valor original:</span>{" "}
@@ -106,7 +121,28 @@ export default function PaymentDrawer({
                 Este pagamento será vinculado especificamente a esta dívida.
               </p>
             </div>
-          )}
+          ) : selectedOwes.length > 0 ? (
+            <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200 max-h-60 overflow-y-auto">
+              <p className="text-sm text-blue-800 font-semibold mb-2">
+                Dívidas Selecionadas ({selectedOwes.length}):
+              </p>
+              <div className="space-y-2">
+                {selectedOwes.map((owe, index) => (
+                  <div key={index} className="flex justify-between items-center text-xs p-2 bg-white rounded border border-blue-100">
+                    <span className="font-medium text-gray-700 flex-1">{owe.description}</span>
+                    <span className="text-blue-600 font-bold">{formatCurrency(owe.value)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-blue-200 flex justify-between items-center">
+                <span className="text-sm text-blue-800 font-semibold">Total:</span>
+                <span className="text-lg text-blue-900 font-bold">{formatCurrency(selectedOwes.reduce((sum, owe) => sum + owe.value, 0))}</span>
+              </div>
+              <p className="text-xs text-blue-600 mt-2">
+                Este pagamento será vinculado a todas as dívidas selecionadas.
+              </p>
+            </div>
+          ) : null}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -119,23 +155,30 @@ export default function PaymentDrawer({
                   required
                   step="0.01"
                   min="0.01"
-                  max={netDebt}
+                  max={selectedTransaction ? selectedTransaction.value : selectedOwes.length > 0 ? totalSelectedAmount : netDebt}
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder={`Máx: ${formatCurrency(netDebt)}`}
+                  placeholder={selectedTransaction 
+                    ? `Máx: ${formatCurrency(selectedTransaction.value)}` 
+                    : selectedOwes.length > 0 
+                    ? `Máx: ${formatCurrency(totalSelectedAmount)}`
+                    : `Máx: ${formatCurrency(netDebt)}`}
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Este valor será aplicado às dívidas mais antigas primeiro
+                  {selectedOwes.length > 0 
+                    ? "Este valor será aplicado proporcionalmente às dívidas selecionadas"
+                    : "Este valor será aplicado às dívidas mais antigas primeiro"}
                 </p>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Descrição (opcional)
+                  Descrição *
                 </label>
                 <input
                   type="text"
+                  required
                   value={paymentDescription}
                   onChange={(e) => setPaymentDescription(e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent"
@@ -145,12 +188,11 @@ export default function PaymentDrawer({
 
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Comprovante de Pagamento *
+                  Comprovante de Pagamento (opcional)
                 </label>
                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-green-500 transition-colors">
                   <input
                     type="file"
-                    required
                     accept="image/*,.pdf"
                     onChange={(e) =>
                       setSelectedFile(e.target.files?.[0] || null)
