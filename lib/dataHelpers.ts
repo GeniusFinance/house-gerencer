@@ -89,9 +89,7 @@ export function groupByUser(data: SheetRow[]): Map<string, SheetRow[]> {
  */
 export function calculateTotal(data: SheetRow[]): number {
   return data.reduce((sum, row) => {
-    if (row.status.toLowerCase() === "paid") {
-      return sum;
-    }
+
     return sum + row.value;
   }, 0);
 }

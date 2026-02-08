@@ -877,17 +877,7 @@ export default function OwesPage() {
                         )}
                       </div>
                     </th>
-                    <th
-                      onClick={() => handleColumnSort("status")}
-                      className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                    >
-                      <div className="flex items-center justify-center gap-1">
-                        Status
-                        {sortColumn === "status" && (
-                          <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
-                        )}
-                      </div>
-                    </th>
+ 
                     <th
                       onClick={() => handleColumnSort("account")}
                       className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
@@ -984,18 +974,7 @@ export default function OwesPage() {
                             </div>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <span
-                            className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${
-                              row.status.toLowerCase() === "paid" ||
-                              row.status.toLowerCase() === "pago"
-                                ? "bg-green-100 text-green-700"
-                                : "bg-red-100 text-red-700"
-                            }`}
-                          >
-                            {row.status}
-                          </span>
-                        </td>
+
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-600">
                             {row.account}
