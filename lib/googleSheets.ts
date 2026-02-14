@@ -81,7 +81,7 @@ export async function appendGoogleSheetsData(
       spreadsheetId,
       range,
       valueInputOption: "USER_ENTERED",
-      insertDataOption: "INSERT_ROWS", // Always insert a new row instead of overwriting
+      insertDataOption: "INSERT_ROWS",
       requestBody: {
         values,
       },
@@ -102,7 +102,6 @@ export async function updateGoogleSheetsCell(
   try {
     const sheets = authenticateGoogleSheets();
 
-    // Convert column index to letter (0 -> A, 1 -> B, etc.)
     const columnLetter = String.fromCharCode(65 + columnIndex);
     const range = `${sheetName}!${columnLetter}${rowIndex}`;
 
@@ -128,13 +127,8 @@ export async function findRowByCode(
   try {
     const data = await getGoogleSheetsData(spreadsheetId, range);
     
-    console.log("Looking for código:", codigo);
-    console.log("Available códigos:", data.map((row: any) => row["code"]));
-    
-    // Normalize for comparison (trim whitespace and compare case-insensitively)
     const normalizedCodigo = codigo.trim().toLowerCase();
     
-    // Find the row index (add 2 because: 1 for header row, 1 for 1-based indexing)
     const rowIndex = data.findIndex((row: any) => {
       const rowCodigo = (row["code"] || "").trim().toLowerCase();
       return rowCodigo === normalizedCodigo;
@@ -146,7 +140,7 @@ export async function findRowByCode(
     }
     
     console.log("Found código at row index:", rowIndex + 2);
-    return rowIndex + 2; // +2 to account for header and 1-based indexing
+    return rowIndex + 2; 
   } catch (error) {
     console.error("Error finding row by code:", error);
     throw error;

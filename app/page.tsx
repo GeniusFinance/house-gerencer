@@ -33,6 +33,30 @@ export default function Home() {
                 Visualize d\u00edvidas por pessoa ou analise relat\u00f3rios mensais dos seus dados.
               </p>
               
+              {/* Dashboard Button */}
+              <div className="mb-6">
+                <a 
+                  href="/dashboard" 
+                  className="group relative overflow-hidden bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] flex items-center justify-between"
+                >
+                  <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                  <div className="relative flex items-center space-x-4">
+                    <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+                      <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-white font-bold text-xl">Dashboard Financeiro</div>
+                      <div className="text-purple-100 text-sm">Visão geral completa com gráficos e métricas</div>
+                    </div>
+                  </div>
+                  <svg className="w-6 h-6 text-white group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </a>
+              </div>
+              
               <div className="space-y-6">
                 {/* View by User */}
                 <div>

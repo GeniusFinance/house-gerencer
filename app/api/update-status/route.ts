@@ -40,13 +40,13 @@ export async function POST(request: NextRequest) {
       spreadsheetId = creditSpreadsheetId;
       range = creditRange;
       columnIndex = CREDIT_RECEBI_COLUMN;
-      sheetName = "credit";
+      sheetName = "Credit";
     } else {
       spreadsheetId =
         process.env.GOOGLE_SHEETS_SPREADSHEET_EXPENSE_ID || creditSpreadsheetId;
       range = process.env.GOOGLE_SHEETS_EXPENSE_RANGE || "Expense!A:I";
       columnIndex = EXPENSE_TAGS_COLUMN;
-      sheetName = "Expense";
+      sheetName = "Expenses";
     }
 
     if (!spreadsheetId || !range) {
