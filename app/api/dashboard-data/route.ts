@@ -255,7 +255,13 @@ export async function GET(request: Request) {
       projectionData,
     };
 
-    return NextResponse.json(dashboardData);
+    return NextResponse.json(dashboardData, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
+    });
   } catch (error) {
     console.error("Error fetching dashboard data:", error);
     return NextResponse.json(

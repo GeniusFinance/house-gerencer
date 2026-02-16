@@ -15,6 +15,7 @@ interface PaymentDrawerProps {
     amount: string;
     description: string;
     file: File | null;
+    observation: string;
   }) => Promise<void>;
 }
 
@@ -34,6 +35,7 @@ export default function PaymentDrawer({
   const [paymentAmount, setPaymentAmount] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [paymentDescription, setPaymentDescription] = useState("");
+  const [paymentObservation, setPaymentObservation] = useState("");
 
   useEffect(() => {
     if (selectedTransaction) {
@@ -60,11 +62,13 @@ export default function PaymentDrawer({
         amount: paymentAmount,
         description: paymentDescription,
         file: selectedFile,
+        observation: paymentObservation,
       });
 
       setPaymentAmount("");
       setPaymentDescription("");
       setSelectedFile(null);
+      setPaymentObservation("");
     } catch (error) {
       console.error("Error in drawer submit:", error);
     } finally {
@@ -76,6 +80,7 @@ export default function PaymentDrawer({
     setPaymentAmount("");
     setPaymentDescription("");
     setSelectedFile(null);
+    setPaymentObservation("");
     onClose();
   };
 
@@ -183,6 +188,19 @@ export default function PaymentDrawer({
                   onChange={(e) => setPaymentDescription(e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   placeholder="Ex: Pagamento parcial do mês"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Observação (opcional)
+                </label>
+                <textarea
+                  value={paymentObservation}
+                  onChange={(e) => setPaymentObservation(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                  placeholder="Ex: Pagamento referente ao acordo feito em janeiro, pendências resolvidas..."
                 />
               </div>
 

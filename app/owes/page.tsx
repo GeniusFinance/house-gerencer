@@ -48,7 +48,9 @@ export default function OwesPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const response = await fetch("/api/sheet-data");
+        const response = await fetch("/api/sheet-data", {
+          cache: 'no-store',
+        });
         if (!response.ok) {
           throw new Error("Failed to load data");
         }
@@ -57,7 +59,9 @@ export default function OwesPage() {
         setData(parsedData);
 
         try {
-          const incomeResponse = await fetch("/api/income-data");
+          const incomeResponse = await fetch("/api/income-data", {
+            cache: 'no-store',
+          });
           if (incomeResponse.ok) {
             const incomes = await incomeResponse.json();
             setIncomeData(incomes);
@@ -361,6 +365,7 @@ export default function OwesPage() {
     amount: string;
     description: string;
     file: File | null;
+    observation: string;
   }) => {
     if (!userName) return;
 
@@ -396,6 +401,7 @@ export default function OwesPage() {
         payer: userName.toLowerCase(),
         proofUrl,
         date: new Date().toLocaleDateString("pt-BR"),
+        observation: data.observation || "",
       };
 
       if (selectedTransaction) {
@@ -403,7 +409,10 @@ export default function OwesPage() {
           data.description || `Pagamento - ${selectedTransaction.description}`;
         incomePayload.codigoRelacao = selectedTransaction.code;
         incomePayload.type = "credit";
-        incomePayload.observation = `Pagamento específico para: ${selectedTransaction.description}`;
+        const autoObservation = `Pagamento específico para: ${selectedTransaction.description}`;
+        incomePayload.observation = data.observation 
+          ? `${autoObservation}. ${data.observation}` 
+          : autoObservation;
       } else if (selectedOwes.length > 0) {
         const owesCodes = selectedOwes.map((owe) => owe.code).join(", ");
         const owesDescriptions = selectedOwes
@@ -414,7 +423,10 @@ export default function OwesPage() {
           `Pagamento geral - ${selectedOwes.length} dívidas`;
         incomePayload.codigoRelacao = owesCodes;
         incomePayload.type = "credit";
-        incomePayload.observation = `Pagamento geral para ${selectedOwes.length} dívidas: ${owesDescriptions}. Total: R$ ${data.amount}`;
+        const autoObservation = `Pagamento geral para ${selectedOwes.length} dívidas: ${owesDescriptions}. Total: R$ ${data.amount}`;
+        incomePayload.observation = data.observation 
+          ? `${autoObservation}. ${data.observation}` 
+          : autoObservation;
       } else {
         const unpaidTransactions = getUnpaidTransactions();
         const transactionsToLink = unpaidTransactions
@@ -424,7 +436,10 @@ export default function OwesPage() {
         incomePayload.description =
           data.description ||
           `Pagamento de ${userName} - ${transactionsToLink}`;
-        incomePayload.observation = `Pagamento aplicado às dívidas mais antigas. Total: R$ ${data.amount}`;
+        const autoObservation = `Pagamento aplicado às dívidas mais antigas. Total: R$ ${data.amount}`;
+        incomePayload.observation = data.observation 
+          ? `${autoObservation}. ${data.observation}` 
+          : autoObservation;
       }
 
 
@@ -444,14 +459,20 @@ export default function OwesPage() {
       setSelectedOwes([]);
       setShowPaymentForm(false);
 
-      const response = await fetch("/api/sheet-data");
+      // Force refresh data with cache busting
+      const timestamp = Date.now();
+      const response = await fetch(`/api/sheet-data?_=${timestamp}`, {
+        cache: 'no-store',
+      });
       if (response.ok) {
         const rawData = await response.json();
         const parsedData = parseSheetData(rawData);
         setData(parsedData);
       }
 
-      const incomeResp = await fetch("/api/income-data");
+      const incomeResp = await fetch(`/api/income-data?_=${timestamp}`, {
+        cache: 'no-store',
+      });
       if (incomeResp.ok) {
         const incomes = await incomeResp.json();
         setIncomeData(incomes);

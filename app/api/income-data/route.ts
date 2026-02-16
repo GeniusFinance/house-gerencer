@@ -22,7 +22,13 @@ export async function GET(request: NextRequest) {
   try {
     const data = await getGoogleSheetsData(spreadsheetId, range);
 
-    return NextResponse.json(data);
+    return NextResponse.json(data, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
+    });
   } catch (error) {
     console.error("Error reading income data:", error);
     return NextResponse.json(

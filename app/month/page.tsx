@@ -20,7 +20,7 @@ export default function MonthPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const response = await fetch('/api/sheet-data');
+        const response = await fetch('/api/sheet-data', { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('Failed to load data');
         }

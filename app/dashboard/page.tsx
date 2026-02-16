@@ -31,7 +31,8 @@ export default function DashboardPage() {
     try {
       setLoading(true);
       const response = await fetch(
-        `/api/dashboard-data?startDate=${start}&endDate=${end}`
+        `/api/dashboard-data?startDate=${start}&endDate=${end}`,
+        { cache: 'no-store' }
       );
       const data = await response.json();
       setDashboardData(data);
@@ -56,7 +57,8 @@ export default function DashboardPage() {
   const fetchProjectionData = async (start: string, end: string) => {
     try {
       const response = await fetch(
-        `/api/dashboard-data?startDate=${start}&endDate=${end}`
+        `/api/dashboard-data?startDate=${start}&endDate=${end}`,
+        { cache: 'no-store' }
       );
       const data = await response.json();
       if (data.projectionData) {
