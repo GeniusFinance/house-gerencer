@@ -13,6 +13,10 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "baseUrl": "./",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
     "plugins": [
       {
         "name": "next"
@@ -23,5 +27,16 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "src/database/seeds", "__tests__"],
+  "ts-node": {
+    "compilerOptions": {
+      "module": "commonjs",
+      "strict": false,
+      "experimentalDecorators": true,
+      "emitDecoratorMetadata": true
+    },
+    "esm": false,
+    "experimentalEsm": false,
+    "require": ["tsconfig-paths/register"]
+  }
 }

@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: debt-tracker-db-prod
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    ports:
+      - "127.0.0.1:${DB_PORT}:5432"  # Only accessible locally
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+      - postgres_backups:/backups
+    networks:
+      - debt-tracker-network-prod
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data_prod:
+    driver: local
+  postgres_backups:
+    driver: local
+
+networks:
+  debt-tracker-network-prod:
+    driver: bridge

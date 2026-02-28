@@ -5,6 +5,12 @@ import {
   findRowByCode,
   updateGoogleSheetsCell,
 } from "@/lib/googleSheets";
+import { ensureDatabase } from "@/src/database/middleware";
+import { Income } from "@/src/entities/Income";
+import { Credit } from "@/src/entities/Credit";
+import { Account } from "@/src/entities/Account";
+import { Category } from "@/src/entities/Category";
+import { Like } from "typeorm";
 import { NextRequest, NextResponse } from "next/server";
 
 const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_INCOME_ID;
@@ -115,6 +121,68 @@ export async function POST(request: NextRequest) {
         console.error("Error updating credit/expense status:", error);
       }
     }
+
+    // ── Persist to database ──────────────────────────────────────────────
+    try {
+      const ds = await ensureDatabase();
+      const incomeRepo  = ds.getRepository(Income);
+      const creditRepo  = ds.getRepository(Credit);
+      const accountRepo = ds.getRepository(Account);
+      const categoryRepo = ds.getRepository(Category);
+
+      // Parse date from "DD/MM/YYYY" → "YYYY-MM-DD"
+      const rawDate = incomeData.date || new Date().toLocaleDateString("pt-BR");
+      let isoDate: string;
+      try {
+        const parts = rawDate.split("/");
+        isoDate =
+          parts.length === 3
+            ? `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`
+            : new Date().toISOString().split("T")[0];
+      } catch {
+        isoDate = new Date().toISOString().split("T")[0];
+      }
+
+      const newIncome = incomeRepo.create({
+        date: isoDate,
+        description: incomeData.description || "",
+        value: Number(incomeData.value),
+        status: "completed",
+        proofUrl: incomeData.proofUrl || "",
+        codigoRelacao: codes ? codes.join(", ") : "",
+        observation: "",
+      });
+
+      const accountEntity = await accountRepo.findOne({
+        where: { name: Like(`%${incomeData.account || "Nubank"}%`) },
+      });
+      if (accountEntity) newIncome.accountId = accountEntity.id;
+
+      const categoryEntity = await categoryRepo.findOne({
+        where: { name: Like(`%${incomeData.category || "Income"}%`) },
+      });
+      if (categoryEntity) newIncome.categoryId = categoryEntity.id;
+
+      await incomeRepo.save(newIncome);
+
+      // Mark each linked Credit as settled
+      if (codes && codes.length > 0) {
+        const creditUpdatePromises = codes.map(async (code) => {
+          const credit = await creditRepo.findOne({ where: { code } });
+          if (!credit) {
+            console.warn(`DB: No credit found with code: ${code}`);
+            return;
+          }
+          credit.status = "settled";
+          await creditRepo.save(credit);
+        });
+        await Promise.all(creditUpdatePromises);
+      }
+    } catch (dbError) {
+      console.error("Error persisting income/credit update to database:", dbError);
+      // Don't fail the request — Sheets update already succeeded
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     return NextResponse.json({
       success: true,

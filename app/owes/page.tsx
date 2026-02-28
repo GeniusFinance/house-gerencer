@@ -1,20 +1,18 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { SheetRow } from "@/types/sheet";
 import {
-  filterByUser,
   calculateTotal,
+  filterByUser,
   formatCurrency,
-  parseSheetData,
   SortOption,
 } from "@/lib/dataHelpers";
+import { SheetRow } from "@/types/sheet";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import PaymentDrawer from "./PaymentDrawer";
 
 export default function OwesPage() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const userName = searchParams.get("user");
 
   const [data, setData] = useState<SheetRow[]>([]);
@@ -45,39 +43,42 @@ export default function OwesPage() {
     useState<SheetRow | null>(null);
   const [selectedOwes, setSelectedOwes] = useState<SheetRow[]>([]);
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const response = await fetch("/api/sheet-data", {
-          cache: 'no-store',
-        });
-        if (!response.ok) {
-          throw new Error("Failed to load data");
-        }
-        const rawData = await response.json();
-        const parsedData = parseSheetData(rawData);
-        setData(parsedData);
-
-        try {
-          const incomeResponse = await fetch("/api/income-data", {
-            cache: 'no-store',
-          });
-          if (incomeResponse.ok) {
-            const incomes = await incomeResponse.json();
-            setIncomeData(incomes);
-          }
-        } catch (incomeErr) {
-          console.error("Failed to load income data:", incomeErr);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load data");
-      } finally {
-        setLoading(false);
+  const loadData = useCallback(async () => {
+    try {
+      const timestamp = Date.now();
+      const creditUrl = userName
+        ? `/api/credit-data?person=${encodeURIComponent(userName)}&_=${timestamp}`
+        : `/api/credit-data?_=${timestamp}`;
+      const response = await fetch(creditUrl, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to load data");
       }
-    }
+      const rawData = await response.json();
+      setData(rawData);
 
+      try {
+        const incomeResponse = await fetch(`/api/income-data?_=${timestamp}`, {
+          cache: "no-store",
+        });
+        if (incomeResponse.ok) {
+          const incomes = await incomeResponse.json();
+          setIncomeData(incomes);
+        }
+      } catch (incomeErr) {
+        console.error("Failed to load income data:", incomeErr);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, [userName]);
+
+  useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   if (loading) {
     return (
@@ -329,7 +330,6 @@ export default function OwesPage() {
   };
 
   const handlePayForTransaction = (transaction: SheetRow) => {
-
     setSelectedTransaction(transaction);
     setShowPaymentForm(true);
   };
@@ -410,8 +410,8 @@ export default function OwesPage() {
         incomePayload.codigoRelacao = selectedTransaction.code;
         incomePayload.type = "credit";
         const autoObservation = `Pagamento específico para: ${selectedTransaction.description}`;
-        incomePayload.observation = data.observation 
-          ? `${autoObservation}. ${data.observation}` 
+        incomePayload.observation = data.observation
+          ? `${autoObservation}. ${data.observation}`
           : autoObservation;
       } else if (selectedOwes.length > 0) {
         const owesCodes = selectedOwes.map((owe) => owe.code).join(", ");
@@ -424,8 +424,8 @@ export default function OwesPage() {
         incomePayload.codigoRelacao = owesCodes;
         incomePayload.type = "credit";
         const autoObservation = `Pagamento geral para ${selectedOwes.length} dívidas: ${owesDescriptions}. Total: R$ ${data.amount}`;
-        incomePayload.observation = data.observation 
-          ? `${autoObservation}. ${data.observation}` 
+        incomePayload.observation = data.observation
+          ? `${autoObservation}. ${data.observation}`
           : autoObservation;
       } else {
         const unpaidTransactions = getUnpaidTransactions();
@@ -437,11 +437,10 @@ export default function OwesPage() {
           data.description ||
           `Pagamento de ${userName} - ${transactionsToLink}`;
         const autoObservation = `Pagamento aplicado às dívidas mais antigas. Total: R$ ${data.amount}`;
-        incomePayload.observation = data.observation 
-          ? `${autoObservation}. ${data.observation}` 
+        incomePayload.observation = data.observation
+          ? `${autoObservation}. ${data.observation}`
           : autoObservation;
       }
-
 
       const incomeResponse = await fetch("/api/income-data", {
         method: "POST",
@@ -455,34 +454,18 @@ export default function OwesPage() {
         throw new Error("Failed to register payment");
       }
 
-      setSelectedTransaction(null);
-      setSelectedOwes([]);
-      setShowPaymentForm(false);
-
-      // Force refresh data with cache busting
-      const timestamp = Date.now();
-      const response = await fetch(`/api/sheet-data?_=${timestamp}`, {
-        cache: 'no-store',
-      });
-      if (response.ok) {
-        const rawData = await response.json();
-        const parsedData = parseSheetData(rawData);
-        setData(parsedData);
-      }
-
-      const incomeResp = await fetch(`/api/income-data?_=${timestamp}`, {
-        cache: 'no-store',
-      });
-      if (incomeResp.ok) {
-        const incomes = await incomeResp.json();
-        setIncomeData(incomes);
-      }
-
       const successMessage = selectedTransaction
         ? `Pagamento registrado com sucesso para: ${selectedTransaction.description}!`
         : selectedOwes.length > 0
         ? `Pagamento registrado com sucesso para ${selectedOwes.length} dívidas selecionadas!`
         : "Pagamento registrado com sucesso! O valor será descontado das dívidas mais antigas.";
+
+      setSelectedTransaction(null);
+      setSelectedOwes([]);
+      setShowPaymentForm(false);
+
+      await loadData();
+
       alert(successMessage);
     } catch (err) {
       console.error("Error submitting payment:", err);
@@ -898,7 +881,7 @@ export default function OwesPage() {
                         )}
                       </div>
                     </th>
- 
+
                     <th
                       onClick={() => handleColumnSort("account")}
                       className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"

@@ -99,7 +99,7 @@ describe('OwesPage', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     ;(global.fetch as jest.Mock).mockImplementation((url: string) => {
-      if (url.includes('/api/sheet-data')) {
+      if (url.includes('/api/credit-data')) {
         return Promise.resolve({
           ok: true,
           json: async () => mockSheetData,
