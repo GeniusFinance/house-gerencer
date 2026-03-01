@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { Expense, Credit, Income, Transfer, Account, Category, Tag, Person, CreditCard, Budget } from '@/src/entities';
 import { Migration1771781597053 } from './migrations/1771781597053-Migration';
+import { AddPayerToIncome1771900000000 } from './migrations/1771900000000-AddPayerToIncome';
 
 export function createDataSource(): DataSource {
   return new DataSource({
@@ -14,7 +15,7 @@ export function createDataSource(): DataSource {
     synchronize: process.env.NODE_ENV === 'development',
     logging: process.env.DB_LOGGING === 'true',
     entities: [Expense, Credit, Income, Transfer, Account, Category, Tag, Person, CreditCard, Budget],
-    migrations: [Migration1771781597053],
+    migrations: [Migration1771781597053, AddPayerToIncome1771900000000],
     subscribers: [],
     extra: {
       max: 10,

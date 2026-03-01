@@ -1,15 +1,8 @@
-import { findRowByCode, updateGoogleSheetsCell } from "@/lib/googleSheets";
+import { NextRequest, NextResponse } from "next/server";
 import { ensureDatabase } from "@/src/database/middleware";
 import { Credit } from "@/src/entities/Credit";
+import { Expense } from "@/src/entities/Expense";
 import { Tag } from "@/src/entities/Tag";
-import { NextRequest, NextResponse } from "next/server";
-
-const creditSpreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_CREDIT_ID;
-const creditRange = process.env.GOOGLE_SHEETS_CREDIT_RANGE;
-
-const CREDIT_RECEBI_COLUMN = 8;
-
-const EXPENSE_TAGS_COLUMN = 7;
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,9 +11,12 @@ export async function POST(request: NextRequest) {
       type: "credit" | "expense";
     };
 
-    const codigoArray = codigo.split(", ").filter((c) => c.trim());
+    const codigoArray = codigo
+      .split(", ")
+      .map((c) => c.trim())
+      .filter(Boolean);
 
-    if (!codigoArray || codigoArray.length === 0) {
+    if (codigoArray.length === 0) {
       return NextResponse.json(
         { error: "Código is required" },
         { status: 400 }
@@ -34,106 +30,76 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let spreadsheetId: string | undefined;
-    let range: string | undefined;
-    let columnIndex: number;
-    let sheetName: string;
+    const ds = await ensureDatabase();
+    const tagRepo = ds.getRepository(Tag);
+
+    // Find or create the "recebi" tag
+    let recebiTag = await tagRepo.findOne({ where: { name: "recebi" } });
+    if (!recebiTag) {
+      recebiTag = tagRepo.create({ name: "recebi", color: "#22c55e" });
+      await tagRepo.save(recebiTag);
+    }
+
+    const updated: { code: string }[] = [];
+    const notFound: string[] = [];
 
     if (type === "credit") {
-      spreadsheetId = creditSpreadsheetId;
-      range = creditRange;
-      columnIndex = CREDIT_RECEBI_COLUMN;
-      sheetName = "Credit";
-    } else {
-      spreadsheetId =
-        process.env.GOOGLE_SHEETS_SPREADSHEET_EXPENSE_ID || creditSpreadsheetId;
-      range = process.env.GOOGLE_SHEETS_EXPENSE_RANGE || "Expense!A:I";
-      columnIndex = EXPENSE_TAGS_COLUMN;
-      sheetName = "Expenses";
-    }
-
-    if (!spreadsheetId || !range) {
-      return NextResponse.json(
-        { error: "Spreadsheet configuration is missing" },
-        { status: 500 }
-      );
-    }
-
-    const updatePromises = codigoArray.map(async (code) => {
-      const rowIndex = await findRowByCode(spreadsheetId!, range!, code);
-
-      if (!rowIndex) {
-        console.warn(`No ${type} found with código: ${code}`);
-        return null;
+      const creditRepo = ds.getRepository(Credit);
+      for (const code of codigoArray) {
+        const credit = await creditRepo.findOne({
+          where: { code },
+          relations: ["tags"],
+        });
+        if (!credit) {
+          console.warn(`Credit not found for code: ${code}`);
+          notFound.push(code);
+          continue;
+        }
+        // Remove any "não recebi" variant tags and add "recebi"
+        const filtered = (credit.tags ?? []).filter(
+          (t) =>
+            !["não recebi", "nao recebi", "não-recebi"].includes(
+              t.name.toLowerCase()
+            )
+        );
+        const alreadyTagged = filtered.some(
+          (t) => t.name.toLowerCase() === "recebi"
+        );
+        credit.tags = alreadyTagged ? filtered : [...filtered, recebiTag];
+        credit.status = "settled";
+        await creditRepo.save(credit);
+        updated.push({ code });
       }
+    } else {
+      const expenseRepo = ds.getRepository(Expense);
+      for (const code of codigoArray) {
+        const expense = await expenseRepo.findOne({ where: { code } });
+        if (!expense) {
+          console.warn(`Expense not found for code: ${code}`);
+          notFound.push(code);
+          continue;
+        }
+        expense.status = "paid";
+        await expenseRepo.save(expense);
+        updated.push({ code });
+      }
+    }
 
-      await updateGoogleSheetsCell(
-        spreadsheetId!,
-        sheetName,
-        rowIndex,
-        columnIndex,
-        "Recebi"
-      );
-
-      return { code, rowIndex };
-    });
-
-    const results = await Promise.all(updatePromises);
-    const successfulUpdates = results.filter((r) => r !== null);
-
-    if (successfulUpdates.length === 0) {
+    if (updated.length === 0) {
       return NextResponse.json(
-        { error: `No ${type} found with códigos: ${codigoArray.join(", ")}` },
+        {
+          error: `No ${type} found with codes: ${codigoArray.join(", ")}`,
+          notFound,
+        },
         { status: 404 }
       );
     }
 
-    // Update PostgreSQL database
-    if (type === "credit") {
-      try {
-        const ds = await ensureDatabase();
-        const creditRepo = ds.getRepository(Credit);
-        const tagRepo = ds.getRepository(Tag);
-
-        // Find or create the "recebi" tag
-        let recebiTag = await tagRepo.findOne({ where: { name: "recebi" } });
-        if (!recebiTag) {
-          recebiTag = tagRepo.create({ name: "recebi", color: "#22c55e" });
-          await tagRepo.save(recebiTag);
-        }
-
-        for (const code of codigoArray) {
-          const credit = await creditRepo.findOne({
-            where: { code },
-            relations: ["tags"],
-          });
-
-          if (!credit) {
-            console.warn(`Credit not found in DB for code: ${code}`);
-            continue;
-          }
-
-          // Remove "não recebi" tag (any casing variation) and add "recebi"
-          const filteredTags = (credit.tags ?? []).filter(
-            (t) => !["não recebi", "nao recebi", "não-recebi"].includes(t.name.toLowerCase())
-          );
-          const alreadyTagged = filteredTags.some(
-            (t) => t.name.toLowerCase() === "recebi"
-          );
-          credit.tags = alreadyTagged ? filteredTags : [...filteredTags, recebiTag];
-          credit.status = "settled";
-          await creditRepo.save(credit);
-        }
-      } catch (dbError) {
-        console.error("Error updating database status:", dbError);
-        // Don't fail the request — Sheets update already succeeded
-      }
-    }
-
     return NextResponse.json({
       success: true,
-      message: `${successfulUpdates.length} ${type}(s) marked as recebi`,
-      updates: successfulUpdates,
+      message: `${updated.length} ${type}(s) marked as recebi`,
+      updates: updated,
+      notFound,
     });
   } catch (error) {
     console.error("Error updating status:", error);

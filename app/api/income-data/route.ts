@@ -1,39 +1,59 @@
-import { formatCurrency } from "@/lib/dataHelpers";
-import {
-  appendGoogleSheetsData,
-  getGoogleSheetsData,
-  findRowByCode,
-  updateGoogleSheetsCell,
-} from "@/lib/googleSheets";
+import { NextRequest, NextResponse } from "next/server";
 import { ensureDatabase } from "@/src/database/middleware";
 import { Income } from "@/src/entities/Income";
 import { Credit } from "@/src/entities/Credit";
 import { Account } from "@/src/entities/Account";
 import { Category } from "@/src/entities/Category";
 import { Like } from "typeorm";
-import { NextRequest, NextResponse } from "next/server";
 
-const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_INCOME_ID;
-const range = process.env.GOOGLE_SHEETS_INCOME_RANGE;
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
 
-const creditSpreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_CREDIT_ID;
-const creditRange = process.env.GOOGLE_SHEETS_CREDIT_RANGE;
-const CREDIT_RECEBI_COLUMN = 8;
-
-const expenseSpreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_EXPENSE_ID;
-const expenseRange = process.env.GOOGLE_SHEETS_EXPENSE_RANGE;
-const EXPENSE_TAGS_COLUMN = 7;
+function incomeToRow(income: Income) {
+  return {
+    id: income.id,
+    date: income.date,
+    description: income.description,
+    value: Number(income.value),
+    account: income.account?.name ?? "",
+    status: income.status,
+    category: income.category?.name ?? "",
+    // "tags" is intentionally the payer name — the frontend uses income.tags to match payer
+    tags: income.payer ?? "",
+    proofUrl: income.proofUrl ?? "",
+    relatedCreditId: income.codigoRelacao ?? "",
+    observation: income.observation ?? "",
+    month: income.month ?? "",
+    year: income.year ?? "",
+  };
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const data = await getGoogleSheetsData(spreadsheetId, range);
+    const ds = await ensureDatabase();
+    const repo = ds.getRepository(Income);
 
-    return NextResponse.json(data, {
-      headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-      },
+    const { searchParams } = new URL(request.url);
+    const payer = searchParams.get("payer");
+
+    const qb = repo
+      .createQueryBuilder("income")
+      .leftJoinAndSelect("income.account", "account")
+      .leftJoinAndSelect("income.category", "category")
+      .leftJoinAndSelect("income.tags", "tags")
+      .orderBy("income.date", "DESC");
+
+    if (payer) {
+      qb.andWhere("LOWER(income.payer) = LOWER(:payer)", { payer });
+    }
+
+    const incomes = await qb.getMany();
+
+    return NextResponse.json(incomes.map(incomeToRow), {
+      headers: NO_CACHE_HEADERS,
     });
   } catch (error) {
     console.error("Error reading income data:", error);
@@ -46,6 +66,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const ds = await ensureDatabase();
+    const incomeRepo = ds.getRepository(Income);
+    const creditRepo = ds.getRepository(Credit);
+    const accountRepo = ds.getRepository(Account);
+    const categoryRepo = ds.getRepository(Category);
+
     const incomeData = (await request.json()) as {
       date?: string;
       description?: string;
@@ -56,138 +82,89 @@ export async function POST(request: NextRequest) {
       payer?: string;
       proofUrl?: string;
       codigoRelacao?: string;
+      observation?: string;
       type?: "credit" | "expense";
     };
 
-    const codes = incomeData.codigoRelacao?.split(", ").filter((c) => c.trim());
-
-
-    const values = [
-      [
-        incomeData.date || new Date().toLocaleDateString("pt-BR"),
-        incomeData.description || "",
-        formatCurrency(incomeData.value) || "",
-        incomeData.account || "",
-        "Paid",
-        incomeData.category || "Incomes",
-        incomeData.subcategory || "",
-        incomeData.payer || "",
-        incomeData.proofUrl || "",
-        codes ? codes.join(", ") : "",
-      ],
-    ];
-
-    await appendGoogleSheetsData(spreadsheetId, range, values);
-
-    if (codes && incomeData.type) {
-      try {
-        let targetSpreadsheetId: string | undefined;
-        let targetRange: string | undefined;
-        let columnIndex: number;
-        let sheetName: string;
-
-        targetSpreadsheetId = creditSpreadsheetId;
-        targetRange = creditRange;
-        columnIndex = CREDIT_RECEBI_COLUMN;
-        sheetName = "credit";
-
-        if (!targetRange || !targetSpreadsheetId) {
-          throw new Error("Credit spreadsheet configuration is missing");
-        }
-
-        const updatePromises = codes.map(async (code) => {
-          const rowIndex = await findRowByCode(
-            targetSpreadsheetId!,
-            targetRange!,
-            code
-          );
-
-          if (!rowIndex) {
-            console.error(`No ${incomeData.type} found with código: ${code}`);
-            return null;
-          }
-
-          await updateGoogleSheetsCell(
-            targetSpreadsheetId!,
-            sheetName,
-            rowIndex,
-            columnIndex,
-            "Recebi"
-          );
-
-        });
-        await Promise.all(updatePromises);
-      } catch (error) {
-        console.error("Error updating credit/expense status:", error);
-      }
+    if (!incomeData.value) {
+      return NextResponse.json(
+        { error: "value is required" },
+        { status: 400 }
+      );
     }
 
-    // ── Persist to database ──────────────────────────────────────────────
+    const codes = incomeData.codigoRelacao
+      ?.split(", ")
+      .map((c) => c.trim())
+      .filter(Boolean);
+
+    // Parse date from "DD/MM/YYYY" → "YYYY-MM-DD"
+    const rawDate =
+      incomeData.date || new Date().toLocaleDateString("pt-BR");
+    let isoDate: string;
     try {
-      const ds = await ensureDatabase();
-      const incomeRepo  = ds.getRepository(Income);
-      const creditRepo  = ds.getRepository(Credit);
-      const accountRepo = ds.getRepository(Account);
-      const categoryRepo = ds.getRepository(Category);
+      const parts = rawDate.split("/");
+      isoDate =
+        parts.length === 3
+          ? `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(
+              2,
+              "0"
+            )}`
+          : new Date().toISOString().split("T")[0];
+    } catch {
+      isoDate = new Date().toISOString().split("T")[0];
+    }
 
-      // Parse date from "DD/MM/YYYY" → "YYYY-MM-DD"
-      const rawDate = incomeData.date || new Date().toLocaleDateString("pt-BR");
-      let isoDate: string;
-      try {
-        const parts = rawDate.split("/");
-        isoDate =
-          parts.length === 3
-            ? `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`
-            : new Date().toISOString().split("T")[0];
-      } catch {
-        isoDate = new Date().toISOString().split("T")[0];
-      }
+    const newIncome = incomeRepo.create({
+      date: isoDate,
+      description: incomeData.description || "",
+      value: Number(incomeData.value),
+      status: "completed",
+      payer: incomeData.payer || "",
+      proofUrl: incomeData.proofUrl || "",
+      codigoRelacao: codes ? codes.join(", ") : "",
+      observation: incomeData.observation || "",
+    });
 
-      const newIncome = incomeRepo.create({
-        date: isoDate,
-        description: incomeData.description || "",
-        value: Number(incomeData.value),
-        status: "completed",
-        proofUrl: incomeData.proofUrl || "",
-        codigoRelacao: codes ? codes.join(", ") : "",
-        observation: "",
-      });
+    const accountEntity = await accountRepo.findOne({
+      where: { name: Like(`%${incomeData.account || "Nubank"}%`) },
+    });
+    if (accountEntity) newIncome.accountId = accountEntity.id;
 
-      const accountEntity = await accountRepo.findOne({
-        where: { name: Like(`%${incomeData.account || "Nubank"}%`) },
-      });
-      if (accountEntity) newIncome.accountId = accountEntity.id;
+    const categoryEntity = await categoryRepo.findOne({
+      where: { name: Like(`%${incomeData.category || "Income"}%`) },
+    });
+    if (categoryEntity) newIncome.categoryId = categoryEntity.id;
 
-      const categoryEntity = await categoryRepo.findOne({
-        where: { name: Like(`%${incomeData.category || "Income"}%`) },
-      });
-      if (categoryEntity) newIncome.categoryId = categoryEntity.id;
+    await incomeRepo.save(newIncome);
 
-      await incomeRepo.save(newIncome);
-
-      // Mark each linked Credit as settled
-      if (codes && codes.length > 0) {
-        const creditUpdatePromises = codes.map(async (code) => {
-          const credit = await creditRepo.findOne({ where: { code } });
+    // Mark each linked Credit as settled
+    if (codes && codes.length > 0) {
+      await Promise.all(
+        codes.map(async (code) => {
+          const credit = await creditRepo.findOne({
+            where: { code },
+            relations: ["tags"],
+          });
           if (!credit) {
-            console.warn(`DB: No credit found with code: ${code}`);
+            console.warn(`No credit found with code: ${code}`);
             return;
           }
           credit.status = "settled";
           await creditRepo.save(credit);
-        });
-        await Promise.all(creditUpdatePromises);
-      }
-    } catch (dbError) {
-      console.error("Error persisting income/credit update to database:", dbError);
-      // Don't fail the request — Sheets update already succeeded
+        })
+      );
     }
-    // ─────────────────────────────────────────────────────────────────────
 
-    return NextResponse.json({
-      success: true,
-      message: "Income registered successfully",
+    const loaded = await incomeRepo.findOne({
+      where: { id: newIncome.id },
+      relations: ["account", "category", "tags"],
     });
+
+    return NextResponse.json(
+      { success: true, income: incomeToRow(loaded!) },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Error registering income:", error);
     return NextResponse.json(

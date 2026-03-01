@@ -44,6 +44,9 @@ export class Income {
   })
   tags: Tag[];
 
+  @Column('varchar', { length: 255, nullable: true })
+  payer: string;
+
   @Column('varchar', { length: 500, nullable: true })
   proofUrl: string;
 
