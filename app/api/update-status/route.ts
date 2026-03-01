@@ -1,4 +1,7 @@
 import { findRowByCode, updateGoogleSheetsCell } from "@/lib/googleSheets";
+import { ensureDatabase } from "@/src/database/middleware";
+import { Credit } from "@/src/entities/Credit";
+import { Tag } from "@/src/entities/Tag";
 import { NextRequest, NextResponse } from "next/server";
 
 const creditSpreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_CREDIT_ID;
@@ -83,6 +86,46 @@ export async function POST(request: NextRequest) {
         { error: `No ${type} found with códigos: ${codigoArray.join(", ")}` },
         { status: 404 }
       );
+    }
+
+    // Update PostgreSQL database
+    if (type === "credit") {
+      try {
+        const ds = await ensureDatabase();
+        const creditRepo = ds.getRepository(Credit);
+        const tagRepo = ds.getRepository(Tag);
+
+        // Find or create the "recebi" tag
+        let recebiTag = await tagRepo.findOne({ where: { name: "recebi" } });
+        if (!recebiTag) {
+          recebiTag = tagRepo.create({ name: "recebi", color: "#22c55e" });
+          await tagRepo.save(recebiTag);
+        }
+
+        for (const code of codigoArray) {
+          const credit = await creditRepo.findOne({
+            where: { code },
+            relations: ["tags"],
+          });
+
+          if (!credit) {
+            console.warn(`Credit not found in DB for code: ${code}`);
+            continue;
+          }
+
+          const alreadyTagged = credit.tags?.some(
+            (t) => t.name.toLowerCase() === "recebi"
+          );
+          if (!alreadyTagged) {
+            credit.tags = [...(credit.tags ?? []), recebiTag];
+          }
+          credit.status = "settled";
+          await creditRepo.save(credit);
+        }
+      } catch (dbError) {
+        console.error("Error updating database status:", dbError);
+        // Don't fail the request — Sheets update already succeeded
+      }
     }
 
     return NextResponse.json({

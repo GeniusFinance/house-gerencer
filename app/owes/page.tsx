@@ -454,6 +454,34 @@ export default function OwesPage() {
         throw new Error("Failed to register payment");
       }
 
+      // Update credit status to "Recebi" after successful payment
+      const codesToUpdate: string[] = [];
+      if (selectedTransaction?.code) {
+        codesToUpdate.push(selectedTransaction.code);
+      } else if (selectedOwes.length > 0) {
+        selectedOwes.forEach((owe) => {
+          if (owe.code) codesToUpdate.push(owe.code);
+        });
+      }
+
+      if (codesToUpdate.length > 0) {
+        try {
+          const updateResponse = await fetch("/api/update-status", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              codigo: codesToUpdate.join(", "),
+              type: "credit",
+            }),
+          });
+          if (!updateResponse.ok) {
+            console.warn("Failed to update credit status to Recebi");
+          }
+        } catch (updateErr) {
+          console.warn("Error updating credit status:", updateErr);
+        }
+      }
+
       const successMessage = selectedTransaction
         ? `Pagamento registrado com sucesso para: ${selectedTransaction.description}!`
         : selectedOwes.length > 0
