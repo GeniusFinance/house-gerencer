@@ -113,12 +113,14 @@ export async function POST(request: NextRequest) {
             continue;
           }
 
-          const alreadyTagged = credit.tags?.some(
+          // Remove "não recebi" tag (any casing variation) and add "recebi"
+          const filteredTags = (credit.tags ?? []).filter(
+            (t) => !["não recebi", "nao recebi", "não-recebi"].includes(t.name.toLowerCase())
+          );
+          const alreadyTagged = filteredTags.some(
             (t) => t.name.toLowerCase() === "recebi"
           );
-          if (!alreadyTagged) {
-            credit.tags = [...(credit.tags ?? []), recebiTag];
-          }
+          credit.tags = alreadyTagged ? filteredTags : [...filteredTags, recebiTag];
           credit.status = "settled";
           await creditRepo.save(credit);
         }
