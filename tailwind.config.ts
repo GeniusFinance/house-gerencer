@@ -11,6 +11,15 @@ const config: Config = {
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
       },
+      colors: {
+        brand: {
+          black:  '#0B0B0D',
+          blue:   '#6B8DF2',
+          indigo: '#5A73BF',
+          slate:  '#2F3940',
+          cyan:   '#91CCD9',
+        },
+      },
     },
   },
   plugins: [],

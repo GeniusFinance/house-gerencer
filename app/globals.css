@@ -23,10 +23,18 @@
   box-sizing: border-box;
 }
 
+:root {
+  --brand-black:  #0B0B0D;
+  --brand-blue:   #6B8DF2;
+  --brand-indigo: #5A73BF;
+  --brand-slate:  #2F3940;
+  --brand-cyan:   #91CCD9;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-color: #ffffff;
   min-height: 100vh;
 }
