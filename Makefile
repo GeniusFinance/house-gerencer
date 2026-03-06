@@ -1,5 +1,5 @@
 .PHONY: help dev dev-logs dev-down dev-rebuild dev-clean prod prod-logs prod-down prod-rebuild \
-         db-shell db-migrate db-migrate-revert db-generate db-seed db-seed-validate db-backup db-restore db-reset \
+         db-shell db-migrate db-migrate-revert db-generate db-seed db-seed-validate db-seed-credits db-sync-credits db-backup db-restore db-reset \
          ps status ps-prod logs logs-prod build build-prod up down logs-all images clean
 
 # Colors for output
@@ -84,6 +84,11 @@ db-seed-credits: env-check ## Import credits from Google Sheets
 	@echo "$(BLUE)📥 Importing credits from Google Sheets...$(NC)"
 	@npx ts-node -r tsconfig-paths/register src/database/seeds/importCreditsFromSheets.ts
 	@echo "$(GREEN)✅ Credits import completed$(NC)"
+
+db-sync-credits: env-check ## Sync new credits from Google Sheets (skips existing records)
+	@echo "$(BLUE)🔄 Syncing new credits from Google Sheets...$(NC)"
+	@npx ts-node -r tsconfig-paths/register src/database/seeds/syncNewCreditsFromSheets.ts
+	@echo "$(GREEN)✅ Credits sync completed$(NC)"
 
 db-backup: ## Backup database to SQL file
 	@echo "$(BLUE)💾 Backing up database...$(NC)"

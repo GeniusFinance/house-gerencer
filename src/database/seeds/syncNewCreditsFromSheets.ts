@@ -14,9 +14,8 @@ import { findOrCreate, parseSheetDate, parseValue } from "./utils/data";
 const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_CREDIT_ID;
 const RANGE = process.env.GOOGLE_SHEETS_CREDIT_RANGE;
 
-interface ImportStats {
+interface SyncStats {
   inserted: number;
-  updated: number;
   skipped: number;
   errors: string[];
 }
@@ -39,8 +38,8 @@ async function resolveTagsFromString(raw: string): Promise<Tag[]> {
   return tags;
 }
 
-async function importCreditsFromSheets(): Promise<void> {
-  console.log("🚀 Starting credit import from Google Sheets...\n");
+async function syncNewCreditsFromSheets(): Promise<void> {
+  console.log("🚀 Starting sync: new credits from Google Sheets...\n");
 
   if (!SPREADSHEET_ID) {
     console.error(
@@ -49,12 +48,7 @@ async function importCreditsFromSheets(): Promise<void> {
     process.exit(1);
   }
 
-  const stats: ImportStats = {
-    inserted: 0,
-    updated: 0,
-    skipped: 0,
-    errors: [],
-  };
+  const stats: SyncStats = { inserted: 0, skipped: 0, errors: [] };
 
   try {
     await initializeDataSource();
@@ -68,7 +62,7 @@ async function importCreditsFromSheets(): Promise<void> {
       return;
     }
 
-    console.log(`📊 ${rows.length} rows found — starting import...\n`);
+    console.log(`📊 ${rows.length} rows found — syncing new items...\n`);
 
     const creditRepo = AppDataSource.getRepository(Credit);
 
@@ -95,6 +89,30 @@ async function importCreditsFromSheets(): Promise<void> {
       }
 
       try {
+        const purchaseDateParsed = parseSheetDate(rawPurchaseDate);
+        const validateDateParsed = parseSheetDate(rawValidateDate);
+        const valueNumber = parseValue(rawValue);
+
+        const alreadyExists = purchaseDateParsed
+          ? await creditRepo.findOne({
+              where: {
+                description: rawDescription.trim(),
+                purchaseDate: purchaseDateParsed,
+                value: valueNumber as any,
+              },
+            })
+          : null;
+
+        if (alreadyExists) {
+          console.log(
+            `  ⏭  Row ${
+              i + 2
+            }: already exists — skipped (${rawDescription.substring(0, 50)})`
+          );
+          stats.skipped++;
+          continue;
+        }
+
         let account: Account | null = null;
         if (rawAccount.trim()) {
           account = (await findOrCreate<Account>(
@@ -160,74 +178,32 @@ async function importCreditsFromSheets(): Promise<void> {
           .substring(0, 20)
           .toUpperCase()}`;
 
-        const purchaseDateParsed = parseSheetDate(rawPurchaseDate);
-        const validateDateParsed = parseSheetDate(rawValidateDate);
-        const valueNumber = parseValue(rawValue);
+        // ── Insert new credit ────────────────────────────────────────────────
+        const credit = creditRepo.create({
+          purchaseDate:
+            purchaseDateParsed ?? new Date().toISOString().split("T")[0],
+          validateDate: validateDateParsed ?? undefined,
+          description: rawDescription.trim(),
+          value: valueNumber,
+          status: rawStatus.trim() || "pending",
+          observation: rawObservation.trim() || undefined,
+          code: autoCode,
+          account: account ?? undefined,
+          accountId: account ? (account as any).id : undefined,
+          category: category ?? undefined,
+          categoryId: category ? (category as any).id : undefined,
+          person: person ?? undefined,
+          personId: person ? (person as any).id : undefined,
+          creditCard: creditCard ?? undefined,
+          creditCardId: creditCard ? (creditCard as any).id : undefined,
+          tags,
+        });
 
-        const existing = purchaseDateParsed
-          ? await creditRepo.findOne({
-              where: {
-                description: rawDescription.trim(),
-                purchaseDate: purchaseDateParsed,
-                value: valueNumber as any,
-              },
-            })
-          : null;
-
-        if (existing) {
-          existing.validateDate = validateDateParsed ?? existing.validateDate;
-          existing.status = rawStatus.trim() || existing.status;
-          existing.observation = rawObservation.trim() || existing.observation;
-          if (account) {
-            existing.account = account;
-            existing.accountId = (account as any).id;
-          }
-          if (category) {
-            existing.category = category;
-            existing.categoryId = (category as any).id;
-          }
-          if (person) {
-            existing.person = person;
-            existing.personId = (person as any).id;
-          }
-          if (creditCard) {
-            existing.creditCard = creditCard;
-            existing.creditCardId = (creditCard as any).id;
-          }
-          if (tags.length) existing.tags = tags;
-
-          await creditRepo.save(existing);
-          stats.updated++;
-          console.log(
-            `  ♻️  Row ${i + 2}: updated  — ${rawDescription.substring(0, 50)}`
-          );
-        } else {
-          const credit = creditRepo.create({
-            purchaseDate:
-              purchaseDateParsed ?? new Date().toISOString().split("T")[0],
-            validateDate: validateDateParsed ?? undefined,
-            description: rawDescription.trim(),
-            value: valueNumber,
-            status: rawStatus.trim() || "pending",
-            observation: rawObservation.trim() || undefined,
-            code: autoCode,
-            account: account ?? undefined,
-            accountId: account ? (account as any).id : undefined,
-            category: category ?? undefined,
-            categoryId: category ? (category as any).id : undefined,
-            person: person ?? undefined,
-            personId: person ? (person as any).id : undefined,
-            creditCard: creditCard ?? undefined,
-            creditCardId: creditCard ? (creditCard as any).id : undefined,
-            tags,
-          });
-
-          await creditRepo.save(credit);
-          stats.inserted++;
-          console.log(
-            `  ✅ Row ${i + 2}: inserted — ${rawDescription.substring(0, 50)}`
-          );
-        }
+        await creditRepo.save(credit, { reload: false });
+        stats.inserted++;
+        console.log(
+          `  ✅ Row ${i + 2}: inserted — ${rawDescription.substring(0, 50)}`
+        );
       } catch (rowError) {
         const msg = `Row ${i + 2} ("${rawDescription.substring(
           0,
@@ -246,10 +222,9 @@ async function importCreditsFromSheets(): Promise<void> {
   }
 
   console.log("\n" + "=".repeat(55));
-  console.log("📊  Import Summary");
+  console.log("📊  Sync Summary");
   console.log("=".repeat(55));
   console.log(`  ✅ Inserted : ${stats.inserted}`);
-  console.log(`  ♻️  Updated  : ${stats.updated}`);
   console.log(`  ⏭  Skipped  : ${stats.skipped}`);
   console.log(`  ❌ Errors   : ${stats.errors.length}`);
   if (stats.errors.length > 0) {
@@ -257,6 +232,7 @@ async function importCreditsFromSheets(): Promise<void> {
     stats.errors.forEach((e) => console.log(`    - ${e}`));
   }
   console.log("=".repeat(55));
+  process.exit(stats.errors.length > 0 ? 1 : 0);
 }
 
-importCreditsFromSheets();
+syncNewCreditsFromSheets();
